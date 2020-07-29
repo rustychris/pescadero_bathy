@@ -233,8 +233,16 @@ for idx in [0,1]:
 gen_IJ=gen.copy()
 gen_IJ.nodes['ij']=IJ
 
+if 0:
+    # Manually change the pigtail coordinates
+    # new_j=-5 # maybe worse?
+    new_j=6.0 # 5 better..
+    for old,new in [ ( [0,0],[0,new_j] ),
+                     ( [4,0],[4,new_j] ) ]:
+        n=np.nonzero( (gen_IJ.nodes['ij'][:,0]==old[0]) &
+                      (gen_IJ.nodes['ij'][:,1]==old[1]) )[0][0]
+        gen_IJ.nodes['ij'][n]=new
            
-##
 
 plt.figure(2).clf()
 gen_IJ.plot_edges(color='k',lw=0.5)
@@ -249,8 +257,228 @@ def ij_label(i,r):
 gen_IJ.plot_nodes(labeler=ij_label)
 plt.axis('tight')
 plt.axis('equal')
+plt.axis(zoom)
 
 ## 
+six.moves.reload_module(quads)
 
-qg=quads.QuadGen(gen=gen_IJ)
+qg2=quads.QuadGen(gen=gen_IJ)
+
+qg2.g_final.delete_node_field('ij')
+os.unlink('test-channel.nc')
+qg2.g_final.write_ugrid('test-channel.nc',overwrite=True)
+
+##
+
+# Even with the evenly distributed grid, some distortion
+# is this a problem with BCs?
+
+zoom=(552515., 552627., 4124387., 4124476)
+
+qg.plot_result()
+plt.axis(zoom)
+
+qg.plot_psi_phi()
+plt.axis(zoom)
+
+##
+
+qg2.plot_result(num=20)
+plt.axis(zoom)
+
+qg2.plot_psi_phi(num=21)
+plt.axis(zoom)
+
+##
+
+# So the decoupling between BCs is a problem.  Even worse,
+# it's not enough to just couple the BCs. Both I and J need
+# to be adjusted to best reflect the boundary geometry.
+
+# Methods of setting the BCs:
+
+#   Include dphi/dx ~ dpsi/dy, dphi/dy ~ -dpsi/dx
+#   in the matrix, and include a no-tangential gradient BC
+#      for phi.
+
+#   Similar, but only in one direction -- don't need this for
+#   the no-flux BCs, only the dirichlet BCs.
+
+#   Include a no-tangential gradient BC for phi, and rows
+#   that calculate an integral of dpsi
+
+# All of these hinge on having a no-tangential gradient
+
+# What if both psi and phi had a no tangential gradient
+# BC, so nobody has dirichlet.  Need something to set
+# the overall scale, right?  Each contiguous boundary
+# would have an unconstrained degree of freedom.
+
+# There is just one global scale factor
+# the additional DOFs might come from the derivatives,
+# evaluated at select locations?
+
+##
+six.moves.reload_module(quads)
+
+# Need a small test case
+
+# Gamma-shaped convex polygon
+# 6 - 4
+# | 2 3
+# 0 1
+gen=unstructured_grid.UnstructuredGrid(max_sides=150,
+                                       extra_node_fields=[('ij',np.float64,2)])
+
+# A starting point that needs some tweaking
+if 1:
+    n0=gen.add_node(x=[0,0]    ,ij=[0,0])
+    n1=gen.add_node(x=[100,0]  ,ij=[3,0])
+    n2=gen.add_node(x=[100,205],ij=[3,10])
+    n3=gen.add_node(x=[155,190],ij=[6,10])
+    n4=gen.add_node(x=[175,265],ij=[6,15])
+    n6=gen.add_node(x=[0,300]  ,ij=[0,15])
+if 0: # Can I do it manually?
+    # Pretty close, but have to adjust both
+    # i *and* j. Maybe because I'm fixing the
+    # boundary, and an arbitrary boundary
+    # is not consistent with an arbitrary
+    # set of psi BCs.
+    n0=gen.add_node(x=[0,0]    ,ij=[0,0])
+    n1=gen.add_node(x=[100,0]  ,ij=[3,0])
+    n2=gen.add_node(x=[100,205],ij=[3,10])
+    n3=gen.add_node(x=[155,190],ij=[6,10])
+    n4=gen.add_node(x=[175,265],ij=[6,13])
+    n6=gen.add_node(x=[0,300]  ,ij=[0,13])
+
+gen.add_cell_and_edges(nodes=[n0,n1,n2,n3,n4,n6])
+
+# For this, no need to infer ijs like gen_IJ above.  That's a different step
+qg=quads.QuadGen(gen=gen)
+qg.plot_result()
+
+qg.plot_psi_phi()
+
+##
+from scipy import sparse
+
+# First, adapt the calc_psi_phi() and NodeDiscretization to
+# implement zero tangential gradients
+self=qg
+
+gtri=self.g_int
+self.nd=nd=quads.NodeDiscretization(gtri)
+
+e2c=gtri.edge_to_cells()
+
+# new way that computes both in one go
+
+# check boundaries and determine where Laplacian BCs go
+boundary=e2c.min(axis=1)<0
+i_dirichlet_nodes={} # for psi
+j_dirichlet_nodes={} # for phi
+
+i_tan_groups=[]
+j_tan_groups=[]
+i_tan_groups_i=[]
+j_tan_groups_j=[]
+
+if 0: # Original way -- copy i,j to BCs
+    for e in np.nonzero(boundary)[0]:
+        n1,n2=gtri.edges['nodes'][e]
+        i1=gtri.nodes['ij'][n1,0]
+        i2=gtri.nodes['ij'][n2,0]
+        if i1==i2:
+            i_dirichlet_nodes[n1]=i1
+            i_dirichlet_nodes[n2]=i2
+        j1=gtri.nodes['ij'][n1,1]
+        j2=gtri.nodes['ij'][n2,1]
+        if j1==j2:
+            # So why does this need to be inverted?
+            j_dirichlet_nodes[n1]=-j1
+            j_dirichlet_nodes[n2]=-j2
+else:
+    # Try zero tangential nodes.  Current code will be under-determined
+    # possibly even with the derivative constraints
+    bcycle=gtri.boundary_cycle()
+    n1=bcycle[-1]
+    i_grp=None
+    j_grp=None
+    
+    for n2 in bcycle:
+        i1=gtri.nodes['ij'][n1,0]
+        i2=gtri.nodes['ij'][n2,0]
+        j1=gtri.nodes['ij'][n1,1]
+        j2=gtri.nodes['ij'][n2,1]
+        if i1==i2:
+            if i_grp is None:
+                i_grp=[n1]
+                i_tan_groups.append(i_grp)
+                i_tan_groups_i.append(i1)
+                j_grp=None
+            i_grp.append(n2)
+        elif j1==j2:
+            if j_grp is None:
+                j_grp=[n1]
+                j_tan_groups.append(j_grp)
+                j_tan_groups_j.append(j1)
+                i_grp=None
+            j_grp.append(n2)
+        else:
+            print("Don't know how to deal with non-cartesian edges")
+        n1=n2
+
+    # Set the range of psi to [-1,1], and pin some j to 1.0
+    low_i=np.argmin(i_tan_groups_i)
+    high_i=np.argmax(i_tan_groups_i)
+    
+    i_dirichlet_nodes[i_tan_groups[low_i][0]]=-1
+    i_dirichlet_nodes[i_tan_groups[high_i][0]]=1
+    j_dirichlet_nodes[j_tan_groups[1][0]]=1
+    
+# HERE:
+#  6 edges lead to 6 zero rows.
+#  Say I impose one scale row --
+#   and two centering rows
+#  with no more, phi is all zero.
+#  
+
+Mblocks=[]
+Bblocks=[]
+if 1: # PSI
+    M_psi_Lap,B_psi_Lap=nd.construct_matrix(op='laplacian',
+                                            dirichlet_nodes=i_dirichlet_nodes,
+                                            zero_tangential_nodes=i_tan_groups)
+    Mblocks.append( [M_psi_Lap,None] )
+    Bblocks.append( B_psi_Lap )
+if 1: # PHI
+    M_phi_Lap,B_phi_Lap=nd.construct_matrix(op='laplacian',
+                                            dirichlet_nodes=j_dirichlet_nodes,
+                                            zero_tangential_nodes=j_tan_groups)
+    Mblocks.append( [None,M_phi_Lap] )
+    Bblocks.append( B_phi_Lap )
+if 1:
+    # PHI-PSI relationship
+    # With the no-tangential-gradient BCs, this becomes necessary. It probably
+    # isn't necessary in the interior, and including it results in an over-specified
+    # problem.
+    Mdx,Bdx=nd.construct_matrix(op='dx')
+    Mdy,Bdy=nd.construct_matrix(op='dy')
+    Mblocks.append( [Mdy,-Mdx] )
+    Mblocks.append( [Mdx, Mdy] )
+    Bblocks.append( np.zeros(Mdx.shape[1]) )
+    Bblocks.append( np.zeros(Mdx.shape[1]) )
+
+
+bigM=sparse.bmat( Mblocks )
+rhs=np.concatenate( Bblocks )
+
+psi_phi,*rest=sparse.linalg.lsqr(bigM,rhs)
+self.psi=psi_phi[:gtri.Nnodes()]
+self.phi=psi_phi[gtri.Nnodes():]
+
+qg.plot_psi_phi(thinning=0.5)
+
+i_stop,n_iter,res_1norm, res_2norm, a_norm, a_cond, ar_norm, xnorm, calc_var = rest
+
 
