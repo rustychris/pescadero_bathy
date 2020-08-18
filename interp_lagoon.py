@@ -7,7 +7,7 @@ from stompy.spatial import field
 from stompy import utils
 from matplotlib.tri import LinearTriInterpolator
 from scipy.interpolate import griddata
-
+import numpy as np
 import xarray as xr
 import six
 import os
@@ -122,23 +122,6 @@ six.moves.reload_module(quads)
 
 gen=unstructured_grid.UnstructuredGrid.read_pickle('cbec-survey-interp-grid9.pkl')
 
-# Rough grid -- have to smooth more than the default
-qg=quads.QuadGen(gen,cell=2,anisotropic=False,execute=True,nom_res=15,smooth_iterations=5)
-
-##
-
-# This doesn't look great, and morphologically doesn't make much sense anyway.
-z_fld=ortho_interp(qg.g_final,aniso=1.5)
-z_fld.smooth_by_convolution(kernel_size=5,iterations=15)
-plt.figure(5).clf()
-z_fld.plot(cmap=turbo)
-
-##
-
-## 
-
-gen=unstructured_grid.UnstructuredGrid.read_pickle('cbec-survey-interp-grid9.pkl')
-
 ##
 
 # HERE  - write out summary plots for these.
@@ -153,16 +136,19 @@ z_fld.plot(cmap=turbo)
 
 # z_fld.write_gdal('lagoon-interp-1m.tif')
 
-##
+##---
 
-qg=quads.QuadGen(gen,cell=1,anisotropic=False,nom_res=5)
+# HERE -This is now updated, re-rendered.  Try building the field again in compare-lidar.
+gen=unstructured_grid.UnstructuredGrid.read_pickle('cbec-survey-interp-grid9.pkl')
+qg=quads.QuadGen(gen,cell=1,final='triangle',nom_res=5,execute=True)
+
 z_fld=ortho_interp(qg.g_final,aniso=2.0)
 z_fld.smooth_by_convolution(kernel_size=3,iterations=3)
 
 plt.figure(4).clf()
 z_fld.plot(cmap=turbo)
 
-# z_fld.write_gdal('north_channel-interp-1m.tif')
+z_fld.write_gdal('north_channel-interp-1m.tif')
 
 ##
 
@@ -176,3 +162,19 @@ z_fld.smooth_by_convolution(kernel_size=3,iterations=3)
 plt.figure(6).clf()
 z_fld.plot(cmap=turbo)
 
+##
+
+# Southeast marsh channel
+gen=unstructured_grid.UnstructuredGrid.read_pickle('cbec-survey-interp-grid9.pkl')
+
+qg=quads.QuadGen(gen,cell=3,anisotropic=False,nom_res=3)
+
+
+##
+z_fld=ortho_interp(qg.g_final,aniso=0.2)
+z_fld.smooth_by_convolution(kernel_size=3,iterations=3)
+
+plt.figure(6).clf()
+z_fld.plot(cmap=turbo)
+
+z_fld.write_gdal('marsh_south_channel-interp-1m.tif')
