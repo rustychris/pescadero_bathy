@@ -24,7 +24,7 @@ if not os.path.exists(fig_dir):
 
 ##
 
-clip=zoom=(552260, 553290, 4124100, 4125400)
+clip=zoom=(551800, 553290, 4124100, 4125400)
 
 # cbec surfaces:
 # For starters load just the N marsh and pond portion.
@@ -205,7 +205,6 @@ for region_name in [
 
 # At this point we render an intermediate DEM, ignoring the ponded areas.
 from stompy.spatial import field
-six.moves.reload_module(field)
 
 # Compile corrections so far, starting with the same shapefile
 # Reload so we can iterate with QGIS
@@ -220,11 +219,18 @@ shp_data=utils.recarray_add_fields(shp_data, new_fields)
 
 shp_data['data_mode']=''
 shp_data['alpha_mode']=''
+shp_data['priority']=-1 # default is disabled
 
 
-def params(name,**kw):
+def params(name,delete=False,**kw):
     global shp_data
     idx=np.nonzero( shp_data['src_name']==name )[0]
+
+    if delete:
+        assert len(idx)==1
+        sel=np.arange(len(shp_data))!=idx[0]
+        shp_data=shp_data[sel]
+        return shp_data
     if len(idx)==1:
         idx=idx[0]
     elif len(idx)==0:
@@ -249,7 +255,6 @@ params('as_built',
        priority=20,
        src=as_built_dem)
 
-
 params('center_marsh',src=lidar2011 - 0.20, priority=40,alpha_mode='feather_out(5.0)')
 
 west_inundated_src=lidar2011 - 0.32 # temporary, while we estimate it below
@@ -270,7 +275,9 @@ params('west_marsh_dry',src=lidar2011 - 0.32,priority=-50,
 
 # will get updated below
 params('west_marsh_inundated',src=lidar2011-0.32,priority=-50,
-       alpha_mode='feather_out(5.0)')
+       alpha_mode='feather_out(5.0)') HERE
+params('west_marsh_inundated',alpha_mode='valid(),buffer(5.0),feather_out(10.0)') # ORIG
+
 
 # will get updated below
 params('north_pond',src=lidar2017,priority=50,
@@ -281,8 +288,65 @@ params('north_pond',src=lidar2017,priority=50,
 # extra seams.  Better to just blend layers
 
 west_marsh=params('west_marsh_dry')['geom'].union(params('west_marsh_inundated')['geom'])
-params('west_marsh',geom=west_marsh,alpha_mode='feather_in(4.0)',
+params('west_marsh',geom=west_marsh,
+       # alpha_mode='feather_in(4.0)',
+       alpha_mode='blur_alpha(4.0)'),
        priority=60,src=lidar2011 - 0.32)
+
+
+# Marsh--pond channel
+# (552227.2488704546, 552470.7314864796, 4124655.0209947866, 4124934.6201988547)
+# Seems that west_marsh pushes that low constant area out too far?  then west_marsh_inundated
+# is probably pulling too much from it.
+# N channel interp was a bit wide => Update footprint in cbec-survey-interp-grid9.pkl
+# west_marsh_inundated is buffering and feathering out a lot => Adjust that boundary
+#   in north_marsh_pond_adjustment_polygons.shp, and slight adjustments to parameters.
+params('north_channel',data_mode='min()',alpha_mode='valid(),feather_in(2.0)')
+
+# Lagoon mouth (551996.7690783864, 552359.0075459109, 4124370.5881716525, 4124786.5586785264)
+#   As-built seems to TIN-interpolate over the channel here.
+#   Are any of the other DEMs good?  Best is maybe the lidar2017 data.
+#   This area will have to get carved out regardless, but that's a later step.
+# This is a big improvement, but this is going to evolve as Dane's QCM is incorporated,
+# and according to any additional survey data.  As it stands, probably reasonable with
+# respect to the cbec survey points and the berm survey points.
+params('lagoon-lidar2017',alpha_mode='blur_alpha(10.0)',
+       data_mode='overlay()',priority=55,
+       src=lidar2017)
+
+# Lagoon  (552129.3226207336, 552521.6926489467, 4124153.228958399, 4124603.800540797)
+# The main issue was actually lagoon-lidar2017 above, which had too sharp of a transition
+# Also decreased the feather on lagoon, and use min()
+params('lagoon',
+       priority=85,src=lagoon_dem,
+       data_mode='min()',
+       alpha_mode='valid(),feather_in(10.0)',
+       geom=field_bounds(lagoon_dem))
+
+params('feeder_culvert',
+       priority=95,src=field.ConstantField(0.6),
+       alpha_mode='feather_in(3.0),feather_out(4.0)',
+       data_mode='min()')
+
+params('south_channel_culvert',
+       priority=95,src=field.ConstantField(1.0),
+       alpha_mode='feather_in(3.0)',
+       data_mode='min()')
+
+# a few survey points are 1.0.  With the blur_alpha(), as the polygon
+# gets narrower the min depth is going to decrease, too.  The value
+# of the ConstantField doesn't necessarily dictate the min depth.
+params('north_ditch',
+       priority=95,src=field.ConstantField(0.7),
+       alpha_mode='blur_alpha(4.0)',
+       data_mode='min()')
+
+
+
+
+
+## 
+
 
 
 # -----------------------
@@ -298,7 +362,11 @@ dem_dry=comp_field.to_grid(dx=res,dy=res,bounds=clip)
 ## 
 #----
 # Assume the western pan is sort of radially similar.
+from stompy.grid import unstructured_grid, exact_delaunay
 from stompy.spatial import interp_concentric
+six.moves.reload_module(unstructured_grid)
+six.moves.reload_module(exact_delaunay)
+six.moves.reload_module(interp_concentric)
         
 west=adj_regions['geom'][ adj_regions['name']=='west_marsh_inundated' ][0]
 center=adj_regions['geom'][ adj_regions['name']=='center_marsh_inundated_west' ][0]
@@ -576,83 +644,60 @@ ax.axis( (552486.9713107223, 552835.1304622293, 4124335.4499081606, 4124673.0755
 
 ##
 
-# Places to fix:
-params('as_built',
-       geom=geometry.box( *[as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-       src=as_built_dem)
+# Debug and adjust small areas here.
 
-# Marsh--pond channel
-# (552227.2488704546, 552470.7314864796, 4124655.0209947866, 4124934.6201988547)
-# Seems that west_marsh pushes that low constant area out too far?  then west_marsh_inundated
-# is probably pulling too much from it.
-# Actually it may be that the N channel interp is too wide?  That's an issue a bit farther
-# south than the obviously weird area.
-# Yeah -- so in the obviously weird area the problem is that west marsh inundated is buffering
-# and feathering out.  So pull in the boundary it's using to not encroach on the channel over
-# there.
-params('west_marsh',alpha_mode='blur_alpha(4.0)')
-
-params('west_marsh_inundated',alpha_mode='valid(),buffer(5.0),feather_out(10.0)') # ORIG
-# params('west_marsh_inundated',alpha_mode='valid(),buffer(5.0),blur_alpha(5.0)')
-params('north_channel',data_mode='min()',alpha_mode='valid(),feather_in(2.0)')
+if 0:
+    # For the spot fixes below, be sure I'm using the cropped as_built to keep
+    # things speedy.
+    params('as_built',
+           geom=geometry.box( *[as_built_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=as_built_dem)
+## 
 
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
 
-dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552227, 552470., 4124655., 4124934),
+dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552415.9434701396, 552736.8874662898, 4124555.6072339383, 4124924.1579228495),
                                    stackup='return')
 fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
 fig.tight_layout()
 
-#plot_wkb.plot_wkb(params('west_marsh')['geom'],
-#                  ax=fig.axes[1])
 print()
-print(f"{'src':30}  {'data_mode':12} {'alpha_mode':12}")
+print(f"{'pri':4} {'src':30}  {'data_mode':12} {'alpha_mode':12}")
 print("---------------------------------------------------------------------")
 
-for idx in range(len(shp_data)):
+for idx in np.argsort(shp_data['priority']):
     row=shp_data[idx]
-    print(f"{row['src_name']:30}  {row['data_mode'].decode():12} {row['alpha_mode'].decode():12}")
+    print(f"{row['priority']:4.0f} {row['src_name']:30}  {row['data_mode'].decode():12} {row['alpha_mode'].decode():12}")
 
 ## 
-# Lagoon mouth (551996.7690783864, 552359.0075459109, 4124370.5881716525, 4124786.5586785264)
-# Lagoon  (552129.3226207336, 552521.6926489467, 4124153.228958399, 4124603.800540797)
-# N Marsh feeder connection and two sets of culverts:
-#  (552517.1488847168, 552652.0161394994, 4124326.8011376793, 4124481.673701921)
 
-# Marsh north ditch
-# (552415.9434701396, 552736.8874662898, 4124555.6072339383, 4124924.1579228495)
+if 1:
+    # For the final render, bring in the full as_built DEM
+    full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
 
-##
+    params('as_built',
+           geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=full_as_built_dem)
 
-# 
-# # For the final render, bring in the full as_built DEM
-# full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
-# 
-# params('as_built',
-#        geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-#        src=full_as_built_dem)
-# 
-# comp_field=field.CompositeField(shp_data=shp_data,
-#                                 factory=factory)
-# 
-# extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
-# 
-# # Render a tile to match as built
-# dem_final=comp_field.to_grid(dx=1,dy=1,bounds=extents)
-# 
-# # 
-# plt.figure(1).clf()
-# fig,ax=plt.subplots(1,1,num=1)
-# fig.subplots_adjust(left=0,right=1,top=1,bottom=0)
-# ax.axis('off')
-# ax.axis('tight')
-# ax.axis('equal')
-# img=dem_final.plot(cmap=turbo,vmin=0,vmax=3.5)
-# 
-# dem_final.plot_hillshade(ax=ax,z_factor=3)
-# plt.colorbar(img)
-# 
-# ##
-# 
-# dem_final.write_gdal('compiled-dem-20200813-1m.tif',overwrite=True)
+    comp_field=field.CompositeField(shp_data=shp_data,
+                                    factory=factory)
+
+    extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
+
+    # Render a tile to match as built
+    dem_final=comp_field.to_grid(dx=1,dy=1,bounds=extents)
+
+    # 
+    plt.figure(1).clf()
+    fig,ax=plt.subplots(1,1,num=1)
+    fig.subplots_adjust(left=0,right=1,top=1,bottom=0)
+    ax.axis('off')
+    ax.axis('tight')
+    ax.axis('equal')
+    img=dem_final.plot(cmap=turbo,vmin=0,vmax=3.5)
+
+    dem_final.plot_hillshade(ax=ax,z_factor=3)
+    plt.colorbar(img)
+
+    dem_final.write_gdal('compiled-dem-20200813-1m.tif',overwrite=True)
