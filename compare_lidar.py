@@ -18,7 +18,7 @@ turbo_gray.set_over( "0.8")
 sst=scmap.load_gradient('oc-sst.cpt')
 ##
 
-fig_dir="figs-20200806"
+fig_dir="figs-20201002"
 if not os.path.exists(fig_dir):
     os.makedirs(fig_dir)
 
@@ -115,7 +115,6 @@ all_points=wkb2shp.shp2geom('../data/cbec/cbec-survey/All_Points.shp',
 xyz=np.array( [ np.array(p) for p in all_points['geom']] )
 xyz[:,2]=all_points['Z_m']
 
-
 ## 
 plt.figure(4).clf()
 fig,axs=plt.subplots(1,3,num=4)
@@ -146,7 +145,6 @@ fig.savefig(os.path.join(fig_dir,"NorthMarsh-3dems-error.png"))
 
 # Break up the comparison to AllPoints by polygon:
 adj_regions=wkb2shp.shp2geom("north_marsh_pond_adjustment_polygons.shp")
-
 
 ## 
 
@@ -179,9 +177,9 @@ print("  median error: %.3f m"%np.median(error)) # 0.197 m
 # pockets of inundation.
 
 for region_name in [
-        #'east_marsh','center_marsh',
-        #'center_marsh_inundated_east',
-        #'center_marsh_inundated_west',
+        'east_marsh','center_marsh',
+        'center_marsh_inundated_east',
+        'center_marsh_inundated_west',
         'west_marsh_dry'
 ]:
     region=adj_regions['geom'][ adj_regions['name']==region_name ][0]
@@ -269,30 +267,24 @@ params('center_marsh_inundated_east',src=lidar2011 - 0.11,priority=50,
 # feather in to reduce ring
 params('center_marsh_inundated_west',src=lidar2011 - 0.06,priority=50,alpha_mode='feather_in(5.0)')
 
-# there's a big step, and it's better to just avoid the step.
-params('west_marsh_dry',src=lidar2011 - 0.32,priority=-50,
-       alpha_mode='buffer(-5.0),feather_in(5.0)')
+# west_marsh_dryand west_marsh_inundated are combined below
+params('west_marsh_dry',priority=-50)
+# src=lidar2011 - 0.32,alpha_mode='buffer(-5.0),feather_in(5.0)'
 
-# will get updated below
+# These will both get updated below 
 params('west_marsh_inundated',src=lidar2011-0.32,priority=-50,
-       alpha_mode='feather_out(5.0)') HERE
-params('west_marsh_inundated',alpha_mode='valid(),buffer(5.0),feather_out(10.0)') # ORIG
-
-
-# will get updated below
+       alpha_mode='feather_out(5.0)')
 params('north_pond',src=lidar2017,priority=50,
        alpha_mode='feather_out(5.0)')
 
-## 
+
 # Merge west_marsh_dry and west_marsh_inundated to avoid creating
 # extra seams.  Better to just blend layers
-
 west_marsh=params('west_marsh_dry')['geom'].union(params('west_marsh_inundated')['geom'])
 params('west_marsh',geom=west_marsh,
        # alpha_mode='feather_in(4.0)',
-       alpha_mode='blur_alpha(4.0)'),
+       alpha_mode='blur_alpha(4.0)',
        priority=60,src=lidar2011 - 0.32)
-
 
 # Marsh--pond channel
 # (552227.2488704546, 552470.7314864796, 4124655.0209947866, 4124934.6201988547)
@@ -301,7 +293,13 @@ params('west_marsh',geom=west_marsh,
 # N channel interp was a bit wide => Update footprint in cbec-survey-interp-grid9.pkl
 # west_marsh_inundated is buffering and feathering out a lot => Adjust that boundary
 #   in north_marsh_pond_adjustment_polygons.shp, and slight adjustments to parameters.
-params('north_channel',data_mode='min()',alpha_mode='valid(),feather_in(2.0)')
+
+north_channel_dem=field.GdalGrid("north_channel-interp-1m.tif")
+params('north_channel',
+       priority=75,src=north_channel_dem,
+       alpha_mode='valid(), feather_in(2.0)',
+       data_mode='min()',
+       geom=field_bounds(north_channel_dem))
 
 # Lagoon mouth (551996.7690783864, 552359.0075459109, 4124370.5881716525, 4124786.5586785264)
 #   As-built seems to TIN-interpolate over the channel here.
@@ -317,6 +315,8 @@ params('lagoon-lidar2017',alpha_mode='blur_alpha(10.0)',
 # Lagoon  (552129.3226207336, 552521.6926489467, 4124153.228958399, 4124603.800540797)
 # The main issue was actually lagoon-lidar2017 above, which had too sharp of a transition
 # Also decreased the feather on lagoon, and use min()
+lagoon_dem=field.GdalGrid("lagoon-interp-1m.tif")
+
 params('lagoon',
        priority=85,src=lagoon_dem,
        data_mode='min()',
@@ -342,25 +342,22 @@ params('north_ditch',
        data_mode='min()')
 
 
+south_channel_dem=field.GdalGrid("marsh_south_channel-interp-1m.tif")
+# And now include that channel
 
+params('marsh_south_channel',
+       priority=90,src=south_channel_dem,
+       data_mode='min()',
+       alpha_mode='valid(),feather_in(2.0)',
+       geom=field_bounds(lagoon_dem))
 
-
-## 
-
-
-
-# -----------------------
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
 res=2.0
 
-    
-##     
 # This can then be used below with the ContourInterpolator
 dem_dry=comp_field.to_grid(dx=res,dy=res,bounds=clip)
 
-## 
-#----
 # Assume the western pan is sort of radially similar.
 from stompy.grid import unstructured_grid, exact_delaunay
 from stompy.spatial import interp_concentric
@@ -417,82 +414,22 @@ plt.figure(1).clf()
 dem_west_inundated.plot(cmap=turbo,vmin=0.5,vmax=2.50)
 dem_west_inundated.plot_hillshade()
 
-##
 # the -0.05 here gets a nice transition with the existing
 # good pan data.  Might be more 
 params('west_marsh_inundated',src=dem_west_inundated-0.05,
        priority=70,alpha_mode='valid(),buffer(5.0),feather_out(10.0)')
+
 
 # Testing out blend with inundation
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
 res=2.0
 
-# --
-if 1: # For debugging the inundated area, before the concentric interp
-    dem_local,stack=comp_field.to_grid(dx=res,dy=res,
-                                       bounds=(552300, 552766, 4124530, 4124853),
-                                       stackup='return')
-
-    plt.figure(3).clf()
-    fig,axs=plt.subplots(3,2,num=3)
-
-    for ax,(name,data,alpha) in zip( axs.ravel(), stack ):
-        data.plot(ax=ax,vmin=0,vmax=3.5,cmap=turbo)
-        data.plot_hillshade(ax=ax)
-        ax.axis('off')
-        ax.set_title(name)
-    fig.subplots_adjust(left=0,right=1,top=0.95,bottom=0,hspace=0.08)
-
-
-##
-
-# And now include that channel
-north_channel_dem=field.GdalGrid("north_channel-interp-1m.tif")
-
-params('north_channel',
-       priority=75,src=north_channel_dem,
-       alpha_mode='valid(), feather_in(2.0)',
-       data_mode='min()',
-       geom=field_bounds(north_channel_dem))
 
 # Testing out blend with inundation
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
 
-
-if 0: 
-    dem_wetdry=comp_field.to_grid(dx=1,dy=1,bounds=clip)
-    plt.figure(1).clf()
-    fig,ax=plt.subplots(1,1,num=1)
-    fig.subplots_adjust(left=0,right=1,top=1,bottom=0)
-    ax.axis('off')
-    ax.axis('tight')
-    ax.axis('equal')
-    img=dem_wetdry.plot(cmap=turbo,vmin=0,vmax=3.5)
-
-    dem_wetdry.plot_hillshade(ax=ax,z_factor=3)
-    plt.colorbar(img)
-    ax.axis( (552486.9713107223, 552835.1304622293, 4124335.4499081606, 4124673.0755821546) )
-
-## 
-if 0: # For debugging the inundated area, before the concentric interp
-    # xxyy=(552302.3362373341, 552394.1411568073, 4124665.499731275, 4124729.251936685)
-    dem_local,stack=comp_field.to_grid(dx=2.,dy=2,
-                                       bounds=clip,
-                                       stackup='return')
-##
-if 0:
-    plt.figure(3).clf()
-    fig,axs=plt.subplots(2,2,num=3,sharex=True,sharey=True)
-
-    for ax,(name,data,alpha) in zip( axs.ravel(), stack[::-1] ):
-        data.plot(ax=ax,vmin=0,vmax=3.5,cmap=turbo)
-        # data.plot_hillshade(ax=ax,z_factor=2)
-        ax.axis('off')
-        ax.set_title(name)
-    fig.subplots_adjust(left=0,right=1,top=0.95,bottom=0,hspace=0.08)
-##
 
 # North Pond
 # Go out about 10.0m to get some dry land to pull from the DEM 
@@ -521,18 +458,15 @@ items[1].set_lw(0.5) ; items[1].set_edgecolor('k')
 # And convert to raster:
 dem_north_pond=ci.rasterize(dx=2)
 dem_north_pond.smooth_by_convolution()
-## 
+
 params('north_pond',src=dem_north_pond,
        priority=80,data_mode='min()',
        alpha_mode='feather_in(5.0)')
 
-
-##
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
 res=2.0
 # This can then be used below with the ContourInterpolator
-
 dem_wetdry=comp_field.to_grid(dx=res,dy=res,bounds=clip)
 
 # --
@@ -546,134 +480,86 @@ img=dem_wetdry.plot(cmap=turbo,vmin=0,vmax=3.5)
 
 dem_wetdry.plot_hillshade(ax=ax)
 plt.colorbar(img)
-# ax.axis( (552510, 552766, 4124530, 4124853))
 
-##
-# p0=np.array([552625., 4124706.])
-# p1=np.array([552631., 4124756.])
-# 
-# transect=p0 + np.linspace(0,1,50)[:,None]*(p1-p0)
-# 
-# d=utils.dist_along(transect)
-# z=dem_wetdry(transect)
-# 
-# # And the sources:
-# pad=10.0
-# tran_bounds=( transect[:,0].min()-pad, transect[:,0].max()+pad,
-#               transect[:,1].min()-pad, transect[:,1].max()+pad )
-# dem_tran,stack=comp_field.to_grid(dx=res,dy=res,bounds=tran_bounds,return_stack=True)
-
-
-# getting close, but the transition is still a little bump
-# Might have hit the limit on just buffering -- need to
-# pass a bigger region to InterpConcentric.
-
-# plt.figure(2).clf()
-# fig,axs=plt.subplots(3,1,num=2)
-# axs[0].plot(d,dem_wetdry(transect),label='result')
-# axs[0].plot(d,dem_tran(transect),label='transect')
-# 
-# for name,data,alpha in stack:
-#     axs[1].plot(d, data(transect), label=name)
-#     axs[2].plot(d, alpha(transect), lw=3.5,label=name)
-# axs[1].legend(loc=[1.05,0])
-# axs[2].legend(loc=[1.05,0])
-# 
-# axs[1].plot( d, srcs['west_marsh_dry'](transect), label='west marsh dry source',
-#              lw=3,alpha=0.3)
-# 
-# fig.subplots_adjust(right=0.7)
-
-
-##
-
-lagoon_dem=field.GdalGrid("lagoon-interp-1m.tif")
 # And now include that channel
-
-params('lagoon',
-       priority=85,src=lagoon_dem,
-       alpha_mode='valid(),feather_in(20.0)',
-       geom=field_bounds(lagoon_dem))
-
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
-res=2.0
+
 # This can then be used below with the ContourInterpolator
-
 dem_wetdry=comp_field.to_grid(dx=1,dy=1,bounds=clip)
 
-
-##
-
-south_channel_dem=field.GdalGrid("marsh_south_channel-interp-1m.tif")
-# And now include that channel
-
-params('marsh_south_channel',
-       priority=90,src=south_channel_dem,
-       data_mode='min()',
-       alpha_mode='valid(),feather_in(2.0)',
-       geom=field_bounds(lagoon_dem))
-
-comp_field=field.CompositeField(shp_data=shp_data,
-                                factory=factory)
-
-dem_wetdry=comp_field.to_grid(dx=1,dy=1,bounds=clip)
-
-# Decent cut for the N marsh and pond.
-# Missing two channels: one that goes east after the culverts
-# along the S side of the marsh, and one that goes along the
-# north side of the marsh.
-
-# Paste in the lagoon DEM, generate a full 1m DEM, and
-# see where we stand.  That might be the thing to pass on
-# for review at this point, and come back to the small
-# ditches later.
-
-# --
-plt.figure(1).clf()
-fig,ax=plt.subplots(1,1,num=1)
-fig.subplots_adjust(left=0,right=1,top=1,bottom=0)
-ax.axis('off')
-ax.axis('tight')
-ax.axis('equal')
-img=dem_wetdry.plot(cmap=turbo,vmin=0,vmax=3.5)
-
-dem_wetdry.plot_hillshade(ax=ax,z_factor=3)
-plt.colorbar(img)
-ax.axis( (552486.9713107223, 552835.1304622293, 4124335.4499081606, 4124673.0755821546) )
-
-##
-
+## 
 # Debug and adjust small areas here.
 
-if 0:
+# N. Marsh internal levee:
+# (552383.5041504747, 552529.5834280611, 4124606.5168135753, 4124743.4661363126)
+# west_marsh looks decent here, but then west_marsh_inundated is blurred out
+# and obscures probably too much of west_marsh
+#   it is set to valid(),buffer(5.0),feather_out(10.0)
+
+params('west_marsh',
+       # alpha_mode='blur_alpha(4.0)'
+       data_mode='src_data.F[src_data.F<1.60]=np.nan ; fill(10.0)',
+       alpha_mode='valid(),blur_alpha(4.0)'
+)
+
+params('west_marsh_inundated',
+       #alpha_mode='valid(),buffer(5.0),feather_out(10.0)'
+       alpha_mode='valid(),buffer(2.0),feather_in(2.0)'
+       )
+
+params('n_marsh_pan_connector',
+       src=field.ConstantField(1.4),
+       priority=99,
+       data_mode='min()',
+       alpha_mode='buffer(1.0),blur_alpha(0.5)')
+
+# The marsh adjacent to the sediment plugs is about 2.1 to 2.4
+# the deeper parts of the ditch are currently 0.95 or so.
+params('sed_plug_east',
+       src=field.ConstantField(1.8),
+       priority=99,
+       data_mode='max()',
+       alpha_mode='feather_out(15.) ; blur_alpha(5.)')
+
+params('sed_plug_west',
+       src=field.ConstantField(1.8),
+       priority=99,
+       data_mode='max()',
+       alpha_mode='feather_out(15),blur_alpha(5.)')
+
+if 1:
     # For the spot fixes below, be sure I'm using the cropped as_built to keep
     # things speedy.
     params('as_built',
            geom=geometry.box( *[as_built_dem.extents[i] for i in [0,2,1,3] ] ),
            src=as_built_dem)
+
+    comp_field=field.CompositeField(shp_data=shp_data,
+                                    factory=factory)
+
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552883., 553200.,
+                                                         4124606., 4124780.),
+                                       stackup='return')
+    fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
+    fig.tight_layout()
+
+    print()
+    print(f"{'pri':4} {'src':30}  {'data_mode':12} {'alpha_mode':12}")
+    print("---------------------------------------------------------------------")
+
+    for idx in np.argsort(shp_data['priority']):
+        row=shp_data[idx]
+        print(f"{row['priority']:4.0f} {row['src_name']:30}  {row['data_mode'].decode():12} {row['alpha_mode'].decode():12}")
+
+
+        
 ## 
+import stompy.plot.cmap as scmap
+sst=scmap.load_gradient('oc-sst.cpt')
 
-comp_field=field.CompositeField(shp_data=shp_data,
-                                factory=factory)
-
-dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552415.9434701396, 552736.8874662898, 4124555.6072339383, 4124924.1579228495),
-                                   stackup='return')
-fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
-fig.tight_layout()
-
-print()
-print(f"{'pri':4} {'src':30}  {'data_mode':12} {'alpha_mode':12}")
-print("---------------------------------------------------------------------")
-
-for idx in np.argsort(shp_data['priority']):
-    row=shp_data[idx]
-    print(f"{row['priority']:4.0f} {row['src_name']:30}  {row['data_mode'].decode():12} {row['alpha_mode'].decode():12}")
-
-## 
-
-if 1:
-    # For the final render, bring in the full as_built DEM
+if 1: # Final render
+    # bring in the full as_built DEM
     full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
 
     params('as_built',
@@ -688,16 +574,153 @@ if 1:
     # Render a tile to match as built
     dem_final=comp_field.to_grid(dx=1,dy=1,bounds=extents)
 
-    # 
     plt.figure(1).clf()
     fig,ax=plt.subplots(1,1,num=1)
     fig.subplots_adjust(left=0,right=1,top=1,bottom=0)
     ax.axis('off')
     ax.axis('tight')
     ax.axis('equal')
-    img=dem_final.plot(cmap=turbo,vmin=0,vmax=3.5)
+
+    # trim out high land that's not useful for the model
+    dem_final.F[ dem_final.F> 25.0]=np.nan
+    
+    img=dem_final.plot(cmap=sst,vmin=0,vmax=3.5)
 
     dem_final.plot_hillshade(ax=ax,z_factor=3)
     plt.colorbar(img)
 
-    dem_final.write_gdal('compiled-dem-20200813-1m.tif',overwrite=True)
+    dem_final.write_gdal('compiled-dem-20201002-1m.tif',overwrite=True)
+
+##
+
+# Write a shapefile of the composite regions
+wkb2shp.wkb2shp("composite-input-20201002.shp",shp_data['geom'],
+                fields=shp_data,overwrite=True)
+
+##
+
+# Final render at 0.5m
+six.moves.reload_module(field)
+comp_field=field.CompositeField(shp_data=shp_data,
+                                factory=factory)
+
+extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
+
+# use a post processing step to separately save rgb versions of the tiles
+rgb_tiles=[]
+def post(tile,**kw):
+    tile_rgb=tile.to_rgba(cmap=sst,vmin=0,vmax=5.0)
+    shade_rgba=tile.hillshade_shader(z_factor=3)
+    # Manually composite:
+    tile_rgb.overlay_rgba(shade_rgba)
+
+    dem_fn=kw['output_fn']
+    rgb_fn=dem_fn.replace('.tif','-rgb.tif')
+    tile_rgb=tile_rgb.crop(kw['bounds'])
+    tile_rgb.assign_projection('EPSG:26910')
+    
+    os.path.exists(rgb_fn) and os.unlink(rgb_fn)
+    tile_rgb.write_gdal_rgb(rgb_fn)
+    rgb_tiles.append(rgb_fn)
+    return tile
+    
+tm=field.TileMaker(comp_field,dx=0.5,dy=0.5,tx=500,ty=500,
+                   output_dir='rendered-0.5m')
+tm.post_render=post
+tm.force=True
+tm.tile(extents[0],extents[2],extents[1],extents[3])
+tm.merge()
+##
+
+extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
+
+# For more general use, 1m is fine.
+tm=field.TileMaker(comp_field,dx=1.0,dy=1.0,tx=1000,ty=1000,
+                   output_dir='rendered-1.0m')
+tm.force=True
+tm.tile(extents[0],extents[2],extents[1],extents[3])
+tm.merge()
+
+##
+
+# And merge the rgbs:
+merged_rgb_fn='rendered-0.5m/merged-rgb.tif'
+cmd=f"gdal_merge.py -o {merged_rgb_fn} " + " ".join(rgb_tiles)
+import subprocess
+subprocess.call(cmd,shell=True)
+
+##
+#  Render with oc-sst and hillshade to an RGB geotiff.
+#  This is super slow, and not scalable.  Would be better to
+#  (a) fix TileMaker to include pads, and
+#  (b) provide a per-tile post-processing step in TileMaker.
+
+if 1:
+    demc=field.GdalGrid('rendered-0.5m/merged.tif',geo_bounds=clip)
+
+    # Generate a colorbar
+    fig=plt.figure(1)
+    fig.clf()
+    fig.set_size_inches([6.4, 4.8],forward=True)
+    img=demc.plot(cmap=sst,vmin=0,vmax=5.0)
+    plt.colorbar(img,label='m NAVD88')
+    fig.axes[0].set_visible(0)
+    fig.savefig('topo-colorbar.png',bbox_inches='tight')
+## 
+#  Warp to 4326 and split to KML tiles
+merc_rgb_fn=merged_rgb_fn.replace('.tif','-EPSG4326.tif')
+assert merc_rgb_fn!=merged_rgb_fn
+
+subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
+                shell=True)
+
+tile_dir='pescadero-as_built-20200822'
+subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
+                shell=True)
+
+##
+
+# Add the colorbar into the kml
+colorbar_kml="""
+ <ScreenOverlay>
+     <name>
+         Legend: Topography
+     </name>
+     <Icon>
+       <href>topo-colorbar.png</href>
+     </Icon>
+     <overlayXY x="0" y="0" xunits="fraction" yunits="fraction"/>
+     <screenXY x="25" y="95" xunits="pixels" yunits="pixels"/>
+     <rotationXY x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
+     <size x="0" y="0" xunits="pixels" yunits="pixels"/>
+ </ScreenOverlay>
+"""
+
+with open(os.path.join(tile_dir,'doc.kml')) as fp:
+    orig_kml=fp.read()
+
+with open(os.path.join(tile_dir,'as_built_updated.kml'),'wt') as fp:
+    new_kml=orig_kml.replace('</Document>',
+                             colorbar_kml+"\n</Document>")
+    fp.write(new_kml)
+
+##
+
+
+dem=field.GdalGrid('rendered-1.0m/merged.tif')
+
+fig=plt.figure(1)
+fig.clf()
+fig.set_size_inches((7,7),forward=True)
+
+ax=fig.add_axes([0,0,1,1])
+
+img=dem.plot(cmap=sst,vmin=0,vmax=5.0,ax=ax)
+ax.axis('tight')
+ax.axis('equal')
+ax.axis( (551954, 553326., 4124051., 4125441))
+
+cax=fig.add_axes([0.7,0.65,0.03,0.25])
+
+plt.colorbar(img,cax=cax,label='m NAVD88')
+fig.savefig('overview-lagoon-marsh.png')
