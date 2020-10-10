@@ -1,6 +1,6 @@
 # Load in Lidar and pre-compiled DEMs, particularly in N Marsh
 #
-import os
+import os,shutil
 import pandas as pd
 from stompy.spatial import field, wkb2shp
 import six
@@ -44,26 +44,26 @@ lidar2011=field.GdalGrid('../data/noaa/lidar/2011CoastCons-north_marsh-lidar/Job
 lidar2011.name="Coastal Cons. 2009-2011 LiDaR"
 
 ##
+if 0:
+    plt.figure(1).clf()
+    fig,axs=plt.subplots(2,2,num=1)
+    fig.set_size_inches([7.5,8.],forward=True)
 
-plt.figure(1).clf()
-fig,axs=plt.subplots(2,2,num=1)
-fig.set_size_inches([7.5,8.],forward=True)
+    for ax,dem in zip(axs.ravel(),[as_built_dem,existing_dem,lidar2017,lidar2011]):
+        img=dem.plot(ax=ax,cmap=sst,vmin=0.5,vmax=3.5)
+        ax.axis('tight')
+        ax.axis('equal')
+        ax.axis(zoom)
+        ax.axis('off')
+        ax.text(0.95,0.9,dem.name,ha='right',transform=ax.transAxes,
+                fontsize=10)
 
-for ax,dem in zip(axs.ravel(),[as_built_dem,existing_dem,lidar2017,lidar2011]):
-    img=dem.plot(ax=ax,cmap=sst,vmin=0.5,vmax=3.5)
-    ax.axis('tight')
-    ax.axis('equal')
-    ax.axis(zoom)
-    ax.axis('off')
-    ax.text(0.95,0.9,dem.name,ha='right',transform=ax.transAxes,
-            fontsize=10)
-    
-cax=fig.add_axes([0.02,0.60,0.03,0.25])
-plt.colorbar(img,cax=cax, label="Elevation (m NAVD88)")
+    cax=fig.add_axes([0.02,0.60,0.03,0.25])
+    plt.colorbar(img,cax=cax, label="Elevation (m NAVD88)")
 
-fig.subplots_adjust(left=0.12,right=0.99,wspace=0.01,bottom=0.02,hspace=0.01,top=0.99)
+    fig.subplots_adjust(left=0.12,right=0.99,wspace=0.01,bottom=0.02,hspace=0.01,top=0.99)
 
-fig.savefig(os.path.join(fig_dir,"compare-4-lidar-north_marsh_pond.png"),dpi=200)
+    fig.savefig(os.path.join(fig_dir,"compare-4-lidar-north_marsh_pond.png"),dpi=200)
 
 ##
 
@@ -76,35 +76,37 @@ delta=field.SimpleGrid(F=cbec_on_2011.F - lidar2011.F,
 delta.name="[As Built] - [2011 Lidar]"
 delta.smooth_by_convolution(iterations=4)
 
-plt.figure(2).clf()
-fig,axs=plt.subplots(1,3,num=2)
-fig.set_size_inches([8.5,4.5],forward=True)
+if 0:
+    plt.figure(2).clf()
+    fig,axs=plt.subplots(1,3,num=2)
+    fig.set_size_inches([8.5,4.5],forward=True)
 
-for ax,dem in zip(axs.ravel(),[cbec_on_2011,delta,lidar2011]):
-    img=dem.plot(ax=ax,cmap=sst,vmin=0.5,vmax=3.5)
-    ax.axis('tight')
-    ax.axis('equal')
-    ax.axis(zoom)
-    ax.axis('off')
-    ax.set_title(dem.name)
-    if dem==delta:
-        img.set_clim([-0.5,0.5])
-        img.set_cmap('seismic')
-        delta_img=img
-    
-cax=fig.add_axes([0.3,0.12,0.4,0.03])
-plt.colorbar(delta_img,cax=cax, label="Difference (m)",orientation='horizontal')
-fig.subplots_adjust(left=0.02,right=0.99,wspace=0.01,bottom=0.10,hspace=0.01,top=0.90)
+    for ax,dem in zip(axs.ravel(),[cbec_on_2011,delta,lidar2011]):
+        img=dem.plot(ax=ax,cmap=sst,vmin=0.5,vmax=3.5)
+        ax.axis('tight')
+        ax.axis('equal')
+        ax.axis(zoom)
+        ax.axis('off')
+        ax.set_title(dem.name)
+        if dem==delta:
+            img.set_clim([-0.5,0.5])
+            img.set_cmap('seismic')
+            delta_img=img
 
-fig.savefig(os.path.join(fig_dir,"cbec_vs_lidar2011-north_marsh_pond.png"),dpi=200)
+    cax=fig.add_axes([0.3,0.12,0.4,0.03])
+    plt.colorbar(delta_img,cax=cax, label="Difference (m)",orientation='horizontal')
+    fig.subplots_adjust(left=0.02,right=0.99,wspace=0.01,bottom=0.10,hspace=0.01,top=0.90)
+
+    fig.savefig(os.path.join(fig_dir,"cbec_vs_lidar2011-north_marsh_pond.png"),dpi=200)
 
 
 ## And identify peak of histogram:
-plt.figure(3).clf()
-valid=np.isfinite(delta.F)
-plt.hist( delta.F[valid], bins=np.linspace(-0.2,0.1,500))
-plt.grid()
-plt.savefig(os.path.join(fig_dir,"cbec_vs_lidar2011-histogram.png"),dpi=200)
+if 0:
+    plt.figure(3).clf()
+    valid=np.isfinite(delta.F)
+    plt.hist( delta.F[valid], bins=np.linspace(-0.2,0.1,500))
+    plt.grid()
+    plt.savefig(os.path.join(fig_dir,"cbec_vs_lidar2011-histogram.png"),dpi=200)
 
 ##
 
@@ -115,31 +117,32 @@ all_points=wkb2shp.shp2geom('../data/cbec/cbec-survey/All_Points.shp',
 xyz=np.array( [ np.array(p) for p in all_points['geom']] )
 xyz[:,2]=all_points['Z_m']
 
-## 
-plt.figure(4).clf()
-fig,axs=plt.subplots(1,3,num=4)
-fig.set_size_inches([8.5,5.],forward=True)
+##
+if 0:
+    plt.figure(4).clf()
+    fig,axs=plt.subplots(1,3,num=4)
+    fig.set_size_inches([8.5,5.],forward=True)
 
-for ax,dem in zip(axs.ravel(),[as_built_dem,lidar2017,lidar2011]):
-    img=dem.plot(ax=ax,cmap='gray',vmin=-1,vmax=5.)
-    dem_at_xyz=dem( xyz[:,:2] )
-    delta=xyz[:,2] - dem_at_xyz
+    for ax,dem in zip(axs.ravel(),[as_built_dem,lidar2017,lidar2011]):
+        img=dem.plot(ax=ax,cmap='gray',vmin=-1,vmax=5.)
+        dem_at_xyz=dem( xyz[:,:2] )
+        delta=xyz[:,2] - dem_at_xyz
 
-    scat=ax.scatter(xyz[:,0],xyz[:,1],20,delta,cmap='seismic')
-    scat.set_clim([-1,1])
+        scat=ax.scatter(xyz[:,0],xyz[:,1],20,delta,cmap='seismic')
+        scat.set_clim([-1,1])
 
-    ax.axis('tight')
-    ax.axis('equal')
-    ax.axis(zoom)
-    ax.axis('off')
-    ax.set_title(dem.name)
-    
-cax=fig.add_axes([0.3,0.12,0.4,0.03])
-plt.colorbar(scat,cax=cax,label="[cbec AllPoints] - [DEM]",orientation='horizontal')
+        ax.axis('tight')
+        ax.axis('equal')
+        ax.axis(zoom)
+        ax.axis('off')
+        ax.set_title(dem.name)
 
-fig.subplots_adjust(left=0.02,right=0.99,wspace=0.01,bottom=0.13,hspace=0.01,top=0.90)
+    cax=fig.add_axes([0.3,0.12,0.4,0.03])
+    plt.colorbar(scat,cax=cax,label="[cbec AllPoints] - [DEM]",orientation='horizontal')
 
-fig.savefig(os.path.join(fig_dir,"NorthMarsh-3dems-error.png"))
+    fig.subplots_adjust(left=0.02,right=0.99,wspace=0.01,bottom=0.13,hspace=0.01,top=0.90)
+
+    fig.savefig(os.path.join(fig_dir,"NorthMarsh-3dems-error.png"))
 
 ##
 
@@ -403,16 +406,14 @@ ci=interp_concentric.ConcentricInterpolator(region,samples,dx=3.,
                                             alpha=0.05,
                                             background_field=dem_dry)
 
-# fig,ax,items=ci.plot_result(clim=[0.5,2.5])
-
 # And convert to raster:
 dem_west_inundated=field.rasterize_grid_cells(ci.grid,values=ci.result,dx=2,dy=2,
                                               stretch=True)
 dem_west_inundated.smooth_by_convolution(iterations=1)
-
-plt.figure(1).clf()
-dem_west_inundated.plot(cmap=turbo,vmin=0.5,vmax=2.50)
-dem_west_inundated.plot_hillshade()
+if 0:
+    plt.figure(1).clf()
+    dem_west_inundated.plot(cmap=turbo,vmin=0.5,vmax=2.50)
+    dem_west_inundated.plot_hillshade()
 
 # the -0.05 here gets a nice transition with the existing
 # good pan data.  Might be more 
@@ -424,7 +425,6 @@ params('west_marsh_inundated',src=dem_west_inundated-0.05,
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
 res=2.0
-
 
 # Testing out blend with inundation
 comp_field=field.CompositeField(shp_data=shp_data,
@@ -514,19 +514,49 @@ params('n_marsh_pan_connector',
        data_mode='min()',
        alpha_mode='buffer(1.0),blur_alpha(0.5)')
 
+# N Marsh fill
+six.moves.reload_module(field)
+                        
+params('west_marsh_fill',
+       src=field.ConstantField(10),
+       priority=105,
+       data_mode='diffuser(),min()',
+       alpha_mode='feather_in(2)')
+
+##
+
+# And do something a bit better for the mouth -- pull from
+# the UCB grid.
+pdo_grid=unstructured_grid.RgfGrid("../data/ucb-model/MouthVariation/EpMp/PDO_EpMp.grd")
+pdo_grid.add_node_field('z_bed_node',-pdo_grid.nodes['depth_node'])
+
+# Convert that to a Field
+pdo_field=field.XYZField(X=pdo_grid.nodes['x'],F=pdo_grid.nodes['z_bed_node'])
+pdo_field._tri=pdo_grid.mpl_triangulation()
+
+##
+six.moves.reload_module(field)
+params('mouth',
+       src=pdo_field,
+       priority=100,
+       data_mode='blur(5)',
+       alpha_mode='feather_in(10.0),blur_alpha(4)')
+
 # The marsh adjacent to the sediment plugs is about 2.1 to 2.4
 # the deeper parts of the ditch are currently 0.95 or so.
-params('sed_plug_east',
-       src=field.ConstantField(1.8),
-       priority=99,
-       data_mode='max()',
-       alpha_mode='feather_out(15.) ; blur_alpha(5.)')
-
-params('sed_plug_west',
-       src=field.ConstantField(1.8),
-       priority=99,
-       data_mode='max()',
-       alpha_mode='feather_out(15),blur_alpha(5.)')
+# In fact, the lidar gets this reasonably well, so instead of
+# adding these in, trim back the north ditch.
+# params('sed_plug_east',
+#        src=field.ConstantField(1.8),
+#        priority=-99,
+#        data_mode='max()',
+#        alpha_mode='feather_out(15.) ; blur_alpha(5.)')
+# 
+# params('sed_plug_west',
+#        src=field.ConstantField(1.8),
+#        priority=-99,
+#        data_mode='max()',
+#        alpha_mode='feather_out(15),blur_alpha(5.)')
 
 if 1:
     # For the spot fixes below, be sure I'm using the cropped as_built to keep
@@ -538,8 +568,8 @@ if 1:
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
 
-    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552883., 553200.,
-                                                         4124606., 4124780.),
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552030., 552250.,
+                                                         4124500., 4124750.),
                                        stackup='return')
     fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
     fig.tight_layout()
@@ -553,7 +583,6 @@ if 1:
         print(f"{row['priority']:4.0f} {row['src_name']:30}  {row['data_mode'].decode():12} {row['alpha_mode'].decode():12}")
 
 
-        
 ## 
 import stompy.plot.cmap as scmap
 sst=scmap.load_gradient('oc-sst.cpt')
@@ -589,12 +618,12 @@ if 1: # Final render
     dem_final.plot_hillshade(ax=ax,z_factor=3)
     plt.colorbar(img)
 
-    dem_final.write_gdal('compiled-dem-20201002-1m.tif',overwrite=True)
+    dem_final.write_gdal('compiled-dem-20201010-1m.tif',overwrite=True)
 
 ##
 
 # Write a shapefile of the composite regions
-wkb2shp.wkb2shp("composite-input-20201002.shp",shp_data['geom'],
+wkb2shp.wkb2shp("composite-input-20201010.shp",shp_data['geom'],
                 fields=shp_data,overwrite=True)
 
 ##
@@ -674,7 +703,7 @@ assert merc_rgb_fn!=merged_rgb_fn
 subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
                 shell=True)
 
-tile_dir='pescadero-as_built-20200822'
+tile_dir='pescadero-as_built-20201010'
 subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
                 shell=True)
 
@@ -695,6 +724,9 @@ colorbar_kml="""
      <size x="0" y="0" xunits="pixels" yunits="pixels"/>
  </ScreenOverlay>
 """
+
+shutil.copyfile('topo-colorbar.png',
+                os.path.join(tile_dir,'topo-colorbar.png'))
 
 with open(os.path.join(tile_dir,'doc.kml')) as fp:
     orig_kml=fp.read()
