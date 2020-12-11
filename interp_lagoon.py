@@ -28,7 +28,9 @@ xyz[:,2]=all_points['Z_m']
 
 ##
 
+# TODO: refactor to use stompy.spatial.interp_orthogonal
 def ortho_interp(g,coords='ij',aniso=1.0,dx=1.0,dy=1.0,
+                 src_dem=None,
                  plot_geo=False,plot_mapped=False):
     """
     Wrap up the orthogonal interpolation code for Pescadero
@@ -45,8 +47,9 @@ def ortho_interp(g,coords='ij',aniso=1.0,dx=1.0,dy=1.0,
     """
     zoom=g.bounds()
 
-    as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif',
-                                geo_bounds=zoom)
+    if src_dem is None:
+        src_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif',
+                               geo_bounds=zoom)
 
     #  Boundary nodes of g get data from the raster.
     #  The rest of AllPoints data takes an IJ from the grid.
@@ -56,7 +59,7 @@ def ortho_interp(g,coords='ij',aniso=1.0,dx=1.0,dy=1.0,
 
     xy_boundary=boundaries[0]
 
-    z_boundary=as_built_dem(xy_boundary)
+    z_boundary=src_dem(xy_boundary)
     xyz_boundary=np.c_[ xy_boundary,z_boundary]
 
     all_xyz=np.concatenate( [ xyz_boundary,

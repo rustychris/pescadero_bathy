@@ -10,6 +10,9 @@ import stompy.plot.cmap as scmap
 from stompy.plot import plot_wkb
 from stompy import utils
 
+from stompy.spatial import interp_orthogonal
+six.moves.reload_module(interp_orthogonal)
+
 turbo=scmap.load_gradient('turbo.cpt')
 
 turbo_gray=scmap.load_gradient('turbo.cpt')
@@ -18,7 +21,7 @@ turbo_gray.set_over( "0.8")
 sst=scmap.load_gradient('oc-sst.cpt')
 ##
 
-fig_dir="figs-20201002"
+fig_dir="figs-20201201"
 if not os.path.exists(fig_dir):
     os.makedirs(fig_dir)
 
@@ -30,6 +33,8 @@ clip=zoom=(551800, 553290, 4124100, 4125400)
 # For starters load just the N marsh and pond portion.
 # For compilation at the end load the whole thing
 as_built_dem = field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif',geo_bounds=clip)
+full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
+
 as_built_dem.name="cbec As Built"
 
 as_built_extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
@@ -364,9 +369,6 @@ dem_dry=comp_field.to_grid(dx=res,dy=res,bounds=clip)
 # Assume the western pan is sort of radially similar.
 from stompy.grid import unstructured_grid, exact_delaunay
 from stompy.spatial import interp_concentric
-six.moves.reload_module(unstructured_grid)
-six.moves.reload_module(exact_delaunay)
-six.moves.reload_module(interp_concentric)
         
 west=adj_regions['geom'][ adj_regions['name']=='west_marsh_inundated' ][0]
 center=adj_regions['geom'][ adj_regions['name']=='center_marsh_inundated_west' ][0]
@@ -558,22 +560,88 @@ params('mouth',
 #        data_mode='max()',
 #        alpha_mode='feather_out(15),blur_alpha(5.)')
 
-if 1:
-    # For the spot fixes below, be sure I'm using the cropped as_built to keep
-    # things speedy.
+##
+
+# Add in the cut off Pescadero onto Delta Marsh.
+# The layout here is digitized roughly from waterways
+# surface, but the match from that surface to cbec
+# is not very good, so I'm not pulling the surface
+# directly, and rather just prescribing some values.
+
+params('pescadero_cut',
+       src=field.ConstantField(2.75),
+       priority=100,
+       data_mode='min()',
+       alpha_mode='feather(4.0)')
+
+if 0:
+    full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
     params('as_built',
-           geom=geometry.box( *[as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-           src=as_built_dem)
+           geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=full_as_built_dem)
 
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
 
-    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552030., 552250.,
-                                                         4124500., 4124750.),
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(553220., 553407.,
+                                                         4123793., 4123912.),
                                        stackup='return')
     fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
     fig.tight_layout()
 
+##
+
+ww_pesc_dem=field.GdalGrid("../data/waterways/Pescadero-Model-Terrain/"
+                           "Existing_Conditions_HECRAS_Surface_2020-10-27/"
+                           "18-057-EG-V5-20201027_EPSG2610_m.tif")
+# The generous feather is to overwrite the polygonal channel from the cbec surface
+params('waterways_pesc_channel',
+       priority=100,
+       src=ww_pesc_dem,
+       data_mode='overlay()',
+       alpha_mode='feather_out(10.0)')
+
+## 
+# HERE: The issue is that during the solve, we don't have access to the
+# full field from previuos layers -- only the portion that's being
+# rendered.
+# So this can't be used like this.
+six.moves.reload_module(interp_orthogonal)
+
+params('as_built',
+       geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
+       src=full_as_built_dem)
+
+blend_poly=params('pesc_blend_fiction')['geom']
+params('pesc_blend_fiction',priority=-1)
+xyxy=blend_poly.bounds
+comp_field=field.CompositeField(shp_data=shp_data,factory=factory)
+blend_src=comp_field.to_grid(dx=1,dy=1,bounds=[xyxy[0],xyxy[2],xyxy[1],xyxy[3]])
+blend_int=interp_orthogonal.OrthoInterpolator(blend_poly,nom_res=2.5,background_field=blend_src,
+                                              anisotropy=1e-5)
+blend_fld=blend_int.field()
+
+## 
+params('pesc_blend_fiction',priority=105,src=blend_fld,
+       data_mode='min()',alpha_mode='valid(),feather(1.0)')
+       
+if 1:
+    # For the spot fixes below, be sure I'm using the cropped as_built to keep
+    # things speedy.
+    params('as_built',
+           geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=full_as_built_dem)
+
+    comp_field=field.CompositeField(shp_data=shp_data,
+                                    factory=factory)
+
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552600., 553260.,
+                                                         4124000, 4124400 ),
+                                       stackup='return')
+    fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
+    fig.tight_layout()
+    plt.setp( fig.axes, adjustable='datalim')
+    
     print()
     print(f"{'pri':4} {'src':30}  {'data_mode':12} {'alpha_mode':12}")
     print("---------------------------------------------------------------------")
@@ -582,8 +650,11 @@ if 1:
         row=shp_data[idx]
         print(f"{row['priority']:4.0f} {row['src_name']:30}  {row['data_mode'].decode():12} {row['alpha_mode'].decode():12}")
 
+    # for ax in plt.gcf().axes:
+    #     plot_wkb.plot_wkb(blend_poly,ax=ax,fc='none')
 
-## 
+##
+
 import stompy.plot.cmap as scmap
 sst=scmap.load_gradient('oc-sst.cpt')
 
@@ -618,12 +689,12 @@ if 1: # Final render
     dem_final.plot_hillshade(ax=ax,z_factor=3)
     plt.colorbar(img)
 
-    dem_final.write_gdal('compiled-dem-20201010-1m.tif',overwrite=True)
+    dem_final.write_gdal('compiled-dem-20201211-1m.tif',overwrite=True)
 
 ##
 
 # Write a shapefile of the composite regions
-wkb2shp.wkb2shp("composite-input-20201010.shp",shp_data['geom'],
+wkb2shp.wkb2shp("composite-input-20201211.shp",shp_data['geom'],
                 fields=shp_data,overwrite=True)
 
 ##
@@ -703,7 +774,7 @@ assert merc_rgb_fn!=merged_rgb_fn
 subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
                 shell=True)
 
-tile_dir='pescadero-as_built-20201010'
+tile_dir='pescadero-as_built-20201211'
 subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
                 shell=True)
 
