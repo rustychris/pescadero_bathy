@@ -21,26 +21,35 @@ turbo_gray.set_over( "0.8")
 sst=scmap.load_gradient('oc-sst.cpt')
 ##
 
-fig_dir="figs-20201201"
+fig_dir="figs-20201211"
 if not os.path.exists(fig_dir):
     os.makedirs(fig_dir)
 
 ##
+
+version="existing" # "asbuilt"
+date_str="20201211"
 
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
 # cbec surfaces:
 # For starters load just the N marsh and pond portion.
 # For compilation at the end load the whole thing
-as_built_dem = field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif',geo_bounds=clip)
-full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
 
-as_built_dem.name="cbec As Built"
+if version=='asbuilt':
+    cbec_dem_fn='../data/cbec/to_RCD/asbuilt/merged.tif'
+    cbec_dem_name="cbec As Built"
+elif version=='existing':
+    cbec_dem_fn='../data/cbec/to_RCD/existing_grade/merged.tif'
+    cbec_dem_name="cbec Existing Grade"
 
-as_built_extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
+cbec_dem = field.GdalGrid(cbec_dem_fn,geo_bounds=clip)
+cbec_full_dem=field.GdalGrid(cbec_dem_fn)
+cbec_full_dem.name=cbec_dem.name=cbec_dem_name
 
-existing_dem =  field.GdalGrid('../data/cbec/to_RCD/existing_grade/merged.tif',geo_bounds=clip)
-existing_dem.name="cbec Existing Grade"
+# as_built_extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
+# existing_dem =  field.GdalGrid('../data/cbec/to_RCD/existing_grade/merged.tif',geo_bounds=clip)
+# existing_dem.name="cbec Existing Grade"
 
 # 2017 CoNED LIDAR
 lidar2017=field.GdalGrid('../data/noaa/lidar/2017CoNED-north_marsh-lidar/Job558295_cent_ca_coned.tif',geo_bounds=clip)
@@ -53,6 +62,7 @@ if 0:
     plt.figure(1).clf()
     fig,axs=plt.subplots(2,2,num=1)
     fig.set_size_inches([7.5,8.],forward=True)
+    raise Exception("Naming for cbec layers factored out. This needs updating to render figure")
 
     for ax,dem in zip(axs.ravel(),[as_built_dem,existing_dem,lidar2017,lidar2011]):
         img=dem.plot(ax=ax,cmap=sst,vmin=0.5,vmax=3.5)
@@ -73,12 +83,12 @@ if 0:
 ##
 
 # Show difference between cbec as-built and the 2011 lidar.
-cbec_on_2011 = as_built_dem.extract_tile(match=lidar2011)
-cbec_on_2011.name=as_built_dem.name
+cbec_on_2011 = cbec_dem.extract_tile(match=lidar2011)
+cbec_on_2011.name=cbec_dem.name
 
 delta=field.SimpleGrid(F=cbec_on_2011.F - lidar2011.F,
                        extents=cbec_on_2011.extents)
-delta.name="[As Built] - [2011 Lidar]"
+delta.name=f"[cbec {version}] - [2011 Lidar]"
 delta.smooth_by_convolution(iterations=4)
 
 if 0:
@@ -128,7 +138,7 @@ if 0:
     fig,axs=plt.subplots(1,3,num=4)
     fig.set_size_inches([8.5,5.],forward=True)
 
-    for ax,dem in zip(axs.ravel(),[as_built_dem,lidar2017,lidar2011]):
+    for ax,dem in zip(axs.ravel(),[cbec_dem,lidar2017,lidar2011]):
         img=dem.plot(ax=ax,cmap='gray',vmin=-1,vmax=5.)
         dem_at_xyz=dem( xyz[:,:2] )
         delta=xyz[:,2] - dem_at_xyz
@@ -254,12 +264,13 @@ def factory(feat):
 
 
 def field_bounds(f):
-    return geometry.box( *[as_built_dem.extents[i] for i in [0,2,1,3] ] )
+    return geometry.box( *[cbec_dem.extents[i] for i in [0,2,1,3] ] )
     
-params('as_built',
-       geom=geometry.box( *[as_built_extents[i] for i in [0,2,1,3] ] ),
+params('cbec_dem',
+       geom=geometry.box( *[cbec_dem.extents[i] for i in [0,2,1,3] ] ),
+       data_mode='fill(3.0)', # existing grade has a few missing pixels.
        priority=20,
-       src=as_built_dem)
+       src=cbec_dem)
 
 params('center_marsh',src=lidar2011 - 0.20, priority=40,alpha_mode='feather_out(5.0)')
 
@@ -575,10 +586,9 @@ params('pescadero_cut',
        alpha_mode='feather(4.0)')
 
 if 0:
-    full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
-    params('as_built',
-           geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-           src=full_as_built_dem)
+    params('cbec_dem',
+           geom=geometry.box( *[cbec_full_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=cbec_full_dem)
 
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
@@ -608,9 +618,9 @@ params('waterways_pesc_channel',
 # So this can't be used like this.
 six.moves.reload_module(interp_orthogonal)
 
-params('as_built',
-       geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-       src=full_as_built_dem)
+params('cbec_dem',
+       geom=geometry.box( *[cbec_full_dem.extents[i] for i in [0,2,1,3] ] ),
+       src=cbec_full_dem)
 
 blend_poly=params('pesc_blend_fiction')['geom']
 params('pesc_blend_fiction',priority=-1)
@@ -628,9 +638,9 @@ params('pesc_blend_fiction',priority=105,src=blend_fld,
 if 1:
     # For the spot fixes below, be sure I'm using the cropped as_built to keep
     # things speedy.
-    params('as_built',
-           geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-           src=full_as_built_dem)
+    params('cbec_dem',
+           geom=geometry.box( *[cbec_full_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=cbec_full_dem)
 
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
@@ -660,19 +670,15 @@ sst=scmap.load_gradient('oc-sst.cpt')
 
 if 1: # Final render
     # bring in the full as_built DEM
-    full_as_built_dem=field.GdalGrid('../data/cbec/to_RCD/asbuilt/merged.tif')
-
-    params('as_built',
-           geom=geometry.box( *[full_as_built_dem.extents[i] for i in [0,2,1,3] ] ),
-           src=full_as_built_dem)
+    params('cbec_dem',
+           geom=geometry.box( *[cbec_full_dem.extents[i] for i in [0,2,1,3] ] ),
+           src=cbec_full_dem)
 
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
 
-    extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
-
     # Render a tile to match as built
-    dem_final=comp_field.to_grid(dx=1,dy=1,bounds=extents)
+    dem_final=comp_field.to_grid(dx=1,dy=1,bounds=cbec_full_dem.extents)
 
     plt.figure(1).clf()
     fig,ax=plt.subplots(1,1,num=1)
@@ -689,12 +695,12 @@ if 1: # Final render
     dem_final.plot_hillshade(ax=ax,z_factor=3)
     plt.colorbar(img)
 
-    dem_final.write_gdal('compiled-dem-20201211-1m.tif',overwrite=True)
+    dem_final.write_gdal(f'compiled-dem-{version}-{date_str}-1m.tif',overwrite=True)
 
 ##
 
 # Write a shapefile of the composite regions
-wkb2shp.wkb2shp("composite-input-20201211.shp",shp_data['geom'],
+wkb2shp.wkb2shp(f"composite-input-{version}-{date_str}.shp",shp_data['geom'],
                 fields=shp_data,overwrite=True)
 
 ##
@@ -703,8 +709,6 @@ wkb2shp.wkb2shp("composite-input-20201211.shp",shp_data['geom'],
 six.moves.reload_module(field)
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
-
-extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
 
 # use a post processing step to separately save rgb versions of the tiles
 rgb_tiles=[]
@@ -728,11 +732,12 @@ tm=field.TileMaker(comp_field,dx=0.5,dy=0.5,tx=500,ty=500,
                    output_dir='rendered-0.5m')
 tm.post_render=post
 tm.force=True
+extents=cbec_full_dem.extents
 tm.tile(extents[0],extents[2],extents[1],extents[3])
 tm.merge()
 ##
 
-extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
+extents = cbec_full_dem.extents
 
 # For more general use, 1m is fine.
 tm=field.TileMaker(comp_field,dx=1.0,dy=1.0,tx=1000,ty=1000,
@@ -774,7 +779,7 @@ assert merc_rgb_fn!=merged_rgb_fn
 subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
                 shell=True)
 
-tile_dir='pescadero-as_built-20201211'
+tile_dir='pescadero-{version}-{date_str}'
 subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
                 shell=True)
 
@@ -802,13 +807,12 @@ shutil.copyfile('topo-colorbar.png',
 with open(os.path.join(tile_dir,'doc.kml')) as fp:
     orig_kml=fp.read()
 
-with open(os.path.join(tile_dir,'as_built_updated.kml'),'wt') as fp:
+with open(os.path.join(tile_dir,f'{version}_updated.kml'),'wt') as fp:
     new_kml=orig_kml.replace('</Document>',
                              colorbar_kml+"\n</Document>")
     fp.write(new_kml)
 
 ##
-
 
 dem=field.GdalGrid('rendered-1.0m/merged.tif')
 
