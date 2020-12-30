@@ -1,3 +1,9 @@
 old
 *~
 *.aux.xml
+figs-*
+composite-input*
+rendered-*
+compiled-dem-*.tif
+tmp.geo
+tmp.msh
