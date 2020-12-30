@@ -162,7 +162,7 @@ if 0:
 ##
 
 # Break up the comparison to AllPoints by polygon:
-adj_regions=wkb2shp.shp2geom("north_marsh_pond_adjustment_polygons.shp")
+adj_regions=wkb2shp.shp2geom("dem-polygons.shp")
 
 ## 
 
@@ -224,7 +224,7 @@ from stompy.spatial import field
 
 # Compile corrections so far, starting with the same shapefile
 # Reload so we can iterate with QGIS
-shp_data=wkb2shp.shp2geom("north_marsh_pond_adjustment_polygons.shp")
+shp_data=wkb2shp.shp2geom("dem-polygons.shp")
 
 new_fields=[ ('src_name',shp_data['name']),
              ('src',np.zeros(len(shp_data),'O')),
@@ -313,7 +313,7 @@ params('west_marsh',geom=west_marsh,
 # west_marsh_inundated is buffering and feathering out a lot => Adjust that boundary
 #   in north_marsh_pond_adjustment_polygons.shp, and slight adjustments to parameters.
 
-north_channel_dem=field.GdalGrid("north_channel-interp-1m.tif")
+north_channel_dem=field.GdalGrid("north_channel_and_ditch-1m.tif")
 params('north_channel',
        priority=75,src=north_channel_dem,
        alpha_mode='valid(), feather_in(2.0)',
@@ -334,7 +334,7 @@ params('lagoon-lidar2017',alpha_mode='blur_alpha(10.0)',
 # Lagoon  (552129.3226207336, 552521.6926489467, 4124153.228958399, 4124603.800540797)
 # The main issue was actually lagoon-lidar2017 above, which had too sharp of a transition
 # Also decreased the feather on lagoon, and use min()
-lagoon_dem=field.GdalGrid("lagoon-interp-1m.tif")
+lagoon_dem=field.GdalGrid("lagoon-1m.tif")
 
 params('lagoon',
        priority=85,src=lagoon_dem,
@@ -361,7 +361,7 @@ params('north_ditch',
        data_mode='min()')
 
 
-south_channel_dem=field.GdalGrid("marsh_south_channel-interp-1m.tif")
+south_channel_dem=field.GdalGrid("north_channel_and_ditch-1m.tif")
 # And now include that channel
 
 params('marsh_south_channel',
@@ -548,28 +548,22 @@ pdo_field=field.XYZField(X=pdo_grid.nodes['x'],F=pdo_grid.nodes['z_bed_node'])
 pdo_field._tri=pdo_grid.mpl_triangulation()
 
 ##
-six.moves.reload_module(field)
 params('mouth',
        src=pdo_field,
        priority=100,
        data_mode='blur(5)',
        alpha_mode='feather_in(10.0),blur_alpha(4)')
 
-# The marsh adjacent to the sediment plugs is about 2.1 to 2.4
-# the deeper parts of the ditch are currently 0.95 or so.
-# In fact, the lidar gets this reasonably well, so instead of
-# adding these in, trim back the north ditch.
-# params('sed_plug_east',
-#        src=field.ConstantField(1.8),
-#        priority=-99,
-#        data_mode='max()',
-#        alpha_mode='feather_out(15.) ; blur_alpha(5.)')
-# 
-# params('sed_plug_west',
-#        src=field.ConstantField(1.8),
-#        priority=-99,
-#        data_mode='max()',
-#        alpha_mode='feather_out(15),blur_alpha(5.)')
+params('lag_thalweg',
+       src=field.ConstantField(0.0),
+       priority=110,
+       data_model='min()',
+       alpha_mode='feather_in(5.0),blur_alpha(10)')
+
+# The lidar gets the sediment plugs reasonably well, so nothing
+# to do but keep the north marsh channel from dredging too much
+# here.
+
 
 ##
 
@@ -612,11 +606,6 @@ params('waterways_pesc_channel',
        alpha_mode='feather_out(10.0)')
 
 ## 
-# HERE: The issue is that during the solve, we don't have access to the
-# full field from previuos layers -- only the portion that's being
-# rendered.
-# So this can't be used like this.
-six.moves.reload_module(interp_orthogonal)
 
 params('cbec_dem',
        geom=geometry.box( *[cbec_full_dem.extents[i] for i in [0,2,1,3] ] ),
