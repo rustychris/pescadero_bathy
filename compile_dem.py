@@ -28,7 +28,7 @@ if not os.path.exists(fig_dir):
 ##
 
 version="existing" # "asbuilt"
-date_str="20201211"
+date_str="20201230"
 
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
@@ -557,7 +557,7 @@ params('mouth',
 params('lag_thalweg',
        src=field.ConstantField(0.0),
        priority=110,
-       data_model='min()',
+       data_mode='min()',
        alpha_mode='feather_in(5.0),blur_alpha(10)')
 
 # The lidar gets the sediment plugs reasonably well, so nothing
@@ -616,14 +616,16 @@ params('pesc_blend_fiction',priority=-1)
 xyxy=blend_poly.bounds
 comp_field=field.CompositeField(shp_data=shp_data,factory=factory)
 blend_src=comp_field.to_grid(dx=1,dy=1,bounds=[xyxy[0],xyxy[2],xyxy[1],xyxy[3]])
+
 blend_int=interp_orthogonal.OrthoInterpolator(blend_poly,nom_res=2.5,background_field=blend_src,
                                               anisotropy=1e-5)
 blend_fld=blend_int.field()
 
-## 
 params('pesc_blend_fiction',priority=105,src=blend_fld,
        data_mode='min()',alpha_mode='valid(),feather(1.0)')
-       
+
+##
+
 if 1:
     # For the spot fixes below, be sure I'm using the cropped as_built to keep
     # things speedy.
@@ -634,8 +636,8 @@ if 1:
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
 
-    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552600., 553260.,
-                                                         4124000, 4124400 ),
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552000., 552400.,
+                                                         4124300, 4124720 ),
                                        stackup='return')
     fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
     fig.tight_layout()
