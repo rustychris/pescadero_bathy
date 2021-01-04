@@ -770,7 +770,7 @@ assert merc_rgb_fn!=merged_rgb_fn
 subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
                 shell=True)
 
-tile_dir='pescadero-{version}-{date_str}'
+tile_dir=f'pescadero-{version}-{date_str}'
 subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
                 shell=True)
 
