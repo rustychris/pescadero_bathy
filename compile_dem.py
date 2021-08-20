@@ -21,14 +21,14 @@ turbo_gray.set_over( "0.8")
 sst=scmap.load_gradient('oc-sst.cpt')
 ##
 
-fig_dir="figs-20201211"
+fig_dir="figs-20210820"
 if not os.path.exists(fig_dir):
     os.makedirs(fig_dir)
 
 ##
 
-version="existing" # "asbuilt"
-date_str="20201230"
+version="existing" # "existing" or "asbuilt"
+date_str="20210820"
 
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
@@ -376,6 +376,22 @@ res=2.0
 
 # This can then be used below with the ContourInterpolator
 dem_dry=comp_field.to_grid(dx=res,dy=res,bounds=clip)
+# 
+# ##
+# # Tuning north_ditch
+# 
+# zoom=(552314., 552519., 4124655., 4124902.) 
+# 
+# dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=zoom,
+#                                    stackup='return')
+# fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=1,z_factor=1.5)
+# fig.tight_layout()
+# 
+# dem_test=comp_field.to_grid(dx=res,dy=res,bounds=zoom)
+# plt.figure(1).clf()
+# dem_test.plot(cmap=turbo,clim=[0.7,1.5])
+
+##
 
 # Assume the western pan is sort of radially similar.
 from stompy.grid import unstructured_grid, exact_delaunay
