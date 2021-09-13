@@ -21,14 +21,14 @@ turbo_gray.set_over( "0.8")
 sst=scmap.load_gradient('oc-sst.cpt')
 ##
 
-fig_dir="figs-20210820"
+fig_dir="figs-20210913"
 if not os.path.exists(fig_dir):
     os.makedirs(fig_dir)
 
 ##
 
-version="existing" # "existing" or "asbuilt"
-date_str="20210820"
+version="asbuilt" # "existing" or "asbuilt"
+date_str="20210913"
 
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
@@ -264,10 +264,11 @@ def factory(feat):
 
 
 def field_bounds(f):
-    return geometry.box( *[cbec_dem.extents[i] for i in [0,2,1,3] ] )
+    # This had been hardwired to cbec_dem
+    return geometry.box( *[f.extents[i] for i in [0,2,1,3] ] )
     
 params('cbec_dem',
-       geom=geometry.box( *[cbec_dem.extents[i] for i in [0,2,1,3] ] ),
+       geom=field_bounds(cbec_dem),
        data_mode='fill(3.0)', # existing grade has a few missing pixels.
        priority=20,
        src=cbec_dem)
@@ -538,10 +539,12 @@ params('west_marsh_inundated',
        )
 
 params('n_marsh_pan_connector',
-       src=field.ConstantField(1.4),
+       # 2021-09-13: Make this 1ft shallower than it had been
+       src=field.ConstantField(1.4+0.3048),
        priority=99,
        data_mode='min()',
-       alpha_mode='buffer(1.0),blur_alpha(0.5)')
+       # And a bit smoother on the burn in 
+       alpha_mode='buffer(1.0), feather_out(2.0)')
 
 # N Marsh fill
 six.moves.reload_module(field)
@@ -579,6 +582,28 @@ params('lag_thalweg',
 # The lidar gets the sediment plugs reasonably well, so nothing
 # to do but keep the north marsh channel from dredging too much
 # here.
+
+##
+
+# See if USGS topo is better than PDO
+
+usgs_dem=field.GdalGrid("../data/usgs/CentCA_Topobathy_DEM_1m_auLleA1aqXot7vR4sWse.tiff")
+
+# Seems to be largely similar to lidar2017. How about just overlay in the same areas?
+
+params('usgs_dem',alpha_mode='blur_alpha(10.0)',
+       data_mode='overlay()',priority=57, # just above lagoon lidar
+       src=usgs_dem)
+
+comp_field=field.CompositeField(shp_data=shp_data,
+                                factory=factory)
+
+#dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(551955, 552234, 4124496, 4124759),
+#                                   stackup='return')
+#fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
+#fig.tight_layout()
+
+
 
 
 ##
@@ -642,6 +667,7 @@ params('pesc_blend_fiction',priority=105,src=blend_fld,
 
 ##
 
+
 if 1:
     # For the spot fixes below, be sure I'm using the cropped as_built to keep
     # things speedy.
@@ -652,8 +678,8 @@ if 1:
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
 
-    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552000., 552400.,
-                                                         4124300, 4124720 ),
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552500., 552700.,
+                                                         4124600, 4124800 ),
                                        stackup='return')
     fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
     fig.tight_layout()
