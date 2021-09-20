@@ -30,6 +30,19 @@ if not os.path.exists(fig_dir):
 version="asbuilt" # "existing" or "asbuilt"
 date_str="20210913"
 
+
+if __name__=='__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Compile DEM for Pescadero/Butano.')
+    parser.add_argument("--version", help="Select asbuilt or existing", nargs=1,
+                        default=version)
+    parser.add_argument("--date", help="Label for output, typically YYYYMMDD",
+                        default=date_str)
+
+    args=parser.parse_args()
+    version=args.version
+    date_str=args.date
+
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
 # cbec surfaces:
@@ -540,7 +553,8 @@ params('west_marsh_inundated',
 
 params('n_marsh_pan_connector',
        # 2021-09-13: Make this 1ft shallower than it had been
-       src=field.ConstantField(1.4+0.3048),
+       # 2021-09-20: And even shallower.
+       src=field.ConstantField(1.9),
        priority=99,
        data_mode='min()',
        # And a bit smoother on the burn in 
