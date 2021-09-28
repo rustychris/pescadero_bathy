@@ -27,14 +27,16 @@ if not os.path.exists(fig_dir):
 
 ##
 
-version="asbuilt" # "existing" or "asbuilt"
-date_str="20210913"
+version="existing" # "existing" or "asbuilt"
+date_str="20210928"
+render_05m=False # 
 
+import sys
 
-if __name__=='__main__':
+if __name__=='__main__' and not sys.argv[0].endswith('python'):
     import argparse
     parser = argparse.ArgumentParser(description='Compile DEM for Pescadero/Butano.')
-    parser.add_argument("--version", help="Select asbuilt or existing", nargs=1,
+    parser.add_argument("--version", help="Select asbuilt or existing", 
                         default=version)
     parser.add_argument("--date", help="Label for output, typically YYYYMMDD",
                         default=date_str)
@@ -42,6 +44,7 @@ if __name__=='__main__':
     args=parser.parse_args()
     version=args.version
     date_str=args.date
+    print(args)
 
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
@@ -591,7 +594,7 @@ params('lag_thalweg',
        src=field.ConstantField(0.0),
        priority=110,
        data_mode='min()',
-       alpha_mode='feather_in(5.0),blur_alpha(10)')
+       alpha_mode='feather_in(5.0),blur_alpha(5.0)')
 
 # The lidar gets the sediment plugs reasonably well, so nothing
 # to do but keep the north marsh channel from dredging too much
@@ -672,6 +675,7 @@ xyxy=blend_poly.bounds
 comp_field=field.CompositeField(shp_data=shp_data,factory=factory)
 blend_src=comp_field.to_grid(dx=1,dy=1,bounds=[xyxy[0],xyxy[2],xyxy[1],xyxy[3]])
 
+##
 blend_int=interp_orthogonal.OrthoInterpolator(blend_poly,nom_res=2.5,background_field=blend_src,
                                               anisotropy=1e-5)
 blend_fld=blend_int.field()
@@ -692,8 +696,8 @@ if 1:
     comp_field=field.CompositeField(shp_data=shp_data,
                                     factory=factory)
 
-    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(552500., 552700.,
-                                                         4124600, 4124800 ),
+    dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=( 551900., 552250.,
+                                                         4124450, 4124850 ),
                                        stackup='return')
     fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
     fig.tight_layout()
@@ -752,129 +756,129 @@ wkb2shp.wkb2shp(f"composite-input-{version}-{date_str}.shp",shp_data['geom'],
 
 ##
 
-# Final render at 0.5m
-six.moves.reload_module(field)
-comp_field=field.CompositeField(shp_data=shp_data,
-                                factory=factory)
+if render_05m:
+    # Final render at 0.5m
+    comp_field=field.CompositeField(shp_data=shp_data,
+                                    factory=factory)
 
-# use a post processing step to separately save rgb versions of the tiles
-rgb_tiles=[]
-def post(tile,**kw):
-    tile_rgb=tile.to_rgba(cmap=sst,vmin=0,vmax=5.0)
-    shade_rgba=tile.hillshade_shader(z_factor=3)
-    # Manually composite:
-    tile_rgb.overlay_rgba(shade_rgba)
+    # use a post processing step to separately save rgb versions of the tiles
+    rgb_tiles=[]
+    def post(tile,**kw):
+        tile_rgb=tile.to_rgba(cmap=sst,vmin=0,vmax=5.0)
+        shade_rgba=tile.hillshade_shader(z_factor=3)
+        # Manually composite:
+        tile_rgb.overlay_rgba(shade_rgba)
 
-    dem_fn=kw['output_fn']
-    rgb_fn=dem_fn.replace('.tif','-rgb.tif')
-    tile_rgb=tile_rgb.crop(kw['bounds'])
-    tile_rgb.assign_projection('EPSG:26910')
-    
-    os.path.exists(rgb_fn) and os.unlink(rgb_fn)
-    tile_rgb.write_gdal_rgb(rgb_fn)
-    rgb_tiles.append(rgb_fn)
-    return tile
-    
-tm=field.TileMaker(comp_field,dx=0.5,dy=0.5,tx=500,ty=500,
-                   output_dir='rendered-0.5m')
-tm.post_render=post
-tm.force=True
-extents=cbec_full_dem.extents
-tm.tile(extents[0],extents[2],extents[1],extents[3])
-tm.merge()
-##
+        dem_fn=kw['output_fn']
+        rgb_fn=dem_fn.replace('.tif','-rgb.tif')
+        tile_rgb=tile_rgb.crop(kw['bounds'])
+        tile_rgb.assign_projection('EPSG:26910')
 
-extents = cbec_full_dem.extents
+        os.path.exists(rgb_fn) and os.unlink(rgb_fn)
+        tile_rgb.write_gdal_rgb(rgb_fn)
+        rgb_tiles.append(rgb_fn)
+        return tile
 
-# For more general use, 1m is fine.
-tm=field.TileMaker(comp_field,dx=1.0,dy=1.0,tx=1000,ty=1000,
-                   output_dir='rendered-1.0m')
-tm.force=True
-tm.tile(extents[0],extents[2],extents[1],extents[3])
-tm.merge()
+    tm=field.TileMaker(comp_field,dx=0.5,dy=0.5,tx=500,ty=500,
+                       output_dir='rendered-0.5m')
+    tm.post_render=post
+    tm.force=True
+    extents=cbec_full_dem.extents
+    tm.tile(extents[0],extents[2],extents[1],extents[3])
+    tm.merge()
+    ##
 
-##
+    extents = cbec_full_dem.extents
 
-# And merge the rgbs:
-merged_rgb_fn='rendered-0.5m/merged-rgb.tif'
-cmd=f"gdal_merge.py -o {merged_rgb_fn} " + " ".join(rgb_tiles)
-import subprocess
-subprocess.call(cmd,shell=True)
+    # For more general use, 1m is fine.
+    tm=field.TileMaker(comp_field,dx=1.0,dy=1.0,tx=1000,ty=1000,
+                       output_dir='rendered-1.0m')
+    tm.force=True
+    tm.tile(extents[0],extents[2],extents[1],extents[3])
+    tm.merge()
 
-##
-#  Render with oc-sst and hillshade to an RGB geotiff.
-#  This is super slow, and not scalable.  Would be better to
-#  (a) fix TileMaker to include pads, and
-#  (b) provide a per-tile post-processing step in TileMaker.
+    ##
 
-if 1:
-    demc=field.GdalGrid('rendered-0.5m/merged.tif',geo_bounds=clip)
+    # And merge the rgbs:
+    merged_rgb_fn='rendered-0.5m/merged-rgb.tif'
+    cmd=f"gdal_merge.py -o {merged_rgb_fn} " + " ".join(rgb_tiles)
+    import subprocess
+    subprocess.call(cmd,shell=True)
 
-    # Generate a colorbar
+    ##
+    #  Render with oc-sst and hillshade to an RGB geotiff.
+    #  This is super slow, and not scalable.  Would be better to
+    #  (a) fix TileMaker to include pads, and
+    #  (b) provide a per-tile post-processing step in TileMaker.
+
+    if 1:
+        demc=field.GdalGrid('rendered-0.5m/merged.tif',geo_bounds=clip)
+
+        # Generate a colorbar
+        fig=plt.figure(1)
+        fig.clf()
+        fig.set_size_inches([6.4, 4.8],forward=True)
+        img=demc.plot(cmap=sst,vmin=0,vmax=5.0)
+        plt.colorbar(img,label='m NAVD88')
+        fig.axes[0].set_visible(0)
+        fig.savefig('topo-colorbar.png',bbox_inches='tight')
+    ## 
+    #  Warp to 4326 and split to KML tiles
+    merc_rgb_fn=merged_rgb_fn.replace('.tif','-EPSG4326.tif')
+    assert merc_rgb_fn!=merged_rgb_fn
+
+    subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
+                    shell=True)
+
+    tile_dir=f'pescadero-{version}-{date_str}'
+    subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
+                    shell=True)
+
+    ##
+
+    # Add the colorbar into the kml
+    colorbar_kml="""
+     <ScreenOverlay>
+         <name>
+             Legend: Topography
+         </name>
+         <Icon>
+           <href>topo-colorbar.png</href>
+         </Icon>
+         <overlayXY x="0" y="0" xunits="fraction" yunits="fraction"/>
+         <screenXY x="25" y="95" xunits="pixels" yunits="pixels"/>
+         <rotationXY x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
+         <size x="0" y="0" xunits="pixels" yunits="pixels"/>
+     </ScreenOverlay>
+    """
+
+    shutil.copyfile('topo-colorbar.png',
+                    os.path.join(tile_dir,'topo-colorbar.png'))
+
+    with open(os.path.join(tile_dir,'doc.kml')) as fp:
+        orig_kml=fp.read()
+
+    with open(os.path.join(tile_dir,f'{version}_updated.kml'),'wt') as fp:
+        new_kml=orig_kml.replace('</Document>',
+                                 colorbar_kml+"\n</Document>")
+        fp.write(new_kml)
+
+    ##
+
+    dem=field.GdalGrid('rendered-1.0m/merged.tif')
+
     fig=plt.figure(1)
     fig.clf()
-    fig.set_size_inches([6.4, 4.8],forward=True)
-    img=demc.plot(cmap=sst,vmin=0,vmax=5.0)
-    plt.colorbar(img,label='m NAVD88')
-    fig.axes[0].set_visible(0)
-    fig.savefig('topo-colorbar.png',bbox_inches='tight')
-## 
-#  Warp to 4326 and split to KML tiles
-merc_rgb_fn=merged_rgb_fn.replace('.tif','-EPSG4326.tif')
-assert merc_rgb_fn!=merged_rgb_fn
+    fig.set_size_inches((7,7),forward=True)
 
-subprocess.call(f'gdalwarp -s_srs EPSG:26910 -t_srs EPSG:4326 {merged_rgb_fn} {merc_rgb_fn}',
-                shell=True)
+    ax=fig.add_axes([0,0,1,1])
 
-tile_dir=f'pescadero-{version}-{date_str}'
-subprocess.call(f'gdal2tiles.py -k -z 12-18 {merc_rgb_fn} {tile_dir}',
-                shell=True)
+    img=dem.plot(cmap=sst,vmin=0,vmax=5.0,ax=ax)
+    ax.axis('tight')
+    ax.axis('equal')
+    ax.axis( (551954, 553326., 4124051., 4125441))
 
-##
+    cax=fig.add_axes([0.7,0.65,0.03,0.25])
 
-# Add the colorbar into the kml
-colorbar_kml="""
- <ScreenOverlay>
-     <name>
-         Legend: Topography
-     </name>
-     <Icon>
-       <href>topo-colorbar.png</href>
-     </Icon>
-     <overlayXY x="0" y="0" xunits="fraction" yunits="fraction"/>
-     <screenXY x="25" y="95" xunits="pixels" yunits="pixels"/>
-     <rotationXY x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
-     <size x="0" y="0" xunits="pixels" yunits="pixels"/>
- </ScreenOverlay>
-"""
-
-shutil.copyfile('topo-colorbar.png',
-                os.path.join(tile_dir,'topo-colorbar.png'))
-
-with open(os.path.join(tile_dir,'doc.kml')) as fp:
-    orig_kml=fp.read()
-
-with open(os.path.join(tile_dir,f'{version}_updated.kml'),'wt') as fp:
-    new_kml=orig_kml.replace('</Document>',
-                             colorbar_kml+"\n</Document>")
-    fp.write(new_kml)
-
-##
-
-dem=field.GdalGrid('rendered-1.0m/merged.tif')
-
-fig=plt.figure(1)
-fig.clf()
-fig.set_size_inches((7,7),forward=True)
-
-ax=fig.add_axes([0,0,1,1])
-
-img=dem.plot(cmap=sst,vmin=0,vmax=5.0,ax=ax)
-ax.axis('tight')
-ax.axis('equal')
-ax.axis( (551954, 553326., 4124051., 4125441))
-
-cax=fig.add_axes([0.7,0.65,0.03,0.25])
-
-plt.colorbar(img,cax=cax,label='m NAVD88')
-fig.savefig('overview-lagoon-marsh.png')
+    plt.colorbar(img,cax=cax,label='m NAVD88')
+    fig.savefig('overview-lagoon-marsh.png')
