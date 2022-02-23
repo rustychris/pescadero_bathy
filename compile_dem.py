@@ -28,6 +28,7 @@ if not os.path.exists(fig_dir):
 ##
 
 version="existing" # "existing" or "asbuilt"
+dredge=False
 date_str="20210928"
 render_05m=False # 
 
@@ -38,19 +39,24 @@ if __name__=='__main__' and not sys.argv[0].endswith('python'):
     parser = argparse.ArgumentParser(description='Compile DEM for Pescadero/Butano.')
     parser.add_argument("--version", help="Select asbuilt or existing", 
                         default=version)
+    parser.add_argument("--dredge", help="Enable dredging the mouth",action='store_true')
     parser.add_argument("--date", help="Label for output, typically YYYYMMDD",
                         default=date_str)
 
     args=parser.parse_args()
     version=args.version
     date_str=args.date
-    print(args)
+    # print(args)
 
 clip=zoom=(551800, 553290, 4124100, 4125400)
 
 # cbec surfaces:
 # For starters load just the N marsh and pond portion.
 # For compilation at the end load the whole thing
+
+options=""
+if dredge:
+    options+="_dredge"
 
 if version=='asbuilt':
     cbec_dem_fn='../data/cbec/to_RCD/asbuilt/merged.tif'
@@ -62,10 +68,6 @@ elif version=='existing':
 cbec_dem = field.GdalGrid(cbec_dem_fn,geo_bounds=clip)
 cbec_full_dem=field.GdalGrid(cbec_dem_fn)
 cbec_full_dem.name=cbec_dem.name=cbec_dem_name
-
-# as_built_extents,res = field.GdalGrid.metadata('../data/cbec/to_RCD/asbuilt/merged.tif')
-# existing_dem =  field.GdalGrid('../data/cbec/to_RCD/existing_grade/merged.tif',geo_bounds=clip)
-# existing_dem.name="cbec Existing Grade"
 
 # 2017 CoNED LIDAR
 lidar2017=field.GdalGrid('../data/noaa/lidar/2017CoNED-north_marsh-lidar/Job558295_cent_ca_coned.tif',geo_bounds=clip)
@@ -590,11 +592,12 @@ params('mouth',
        data_mode='blur(5)',
        alpha_mode='feather_in(10.0),blur_alpha(4)')
 
-params('lag_thalweg',
-       src=field.ConstantField(0.0),
-       priority=110,
-       data_mode='min()',
-       alpha_mode='feather_in(5.0),blur_alpha(5.0)')
+if dredge:
+    params('lag_thalweg',
+           src=field.ConstantField(0.0),
+           priority=110,
+           data_mode='min()',
+           alpha_mode='feather_in(5.0),blur_alpha(5.0)')
 
 # The lidar gets the sediment plugs reasonably well, so nothing
 # to do but keep the north marsh channel from dredging too much
@@ -614,14 +617,6 @@ params('usgs_dem',alpha_mode='blur_alpha(10.0)',
 
 comp_field=field.CompositeField(shp_data=shp_data,
                                 factory=factory)
-
-#dem_local,stack=comp_field.to_grid(dx=1,dy=1,bounds=(551955, 552234, 4124496, 4124759),
-#                                   stackup='return')
-#fig=comp_field.plot_stackup(dem_local, stack,cmap=turbo,num=3,z_factor=1.5)
-#fig.tight_layout()
-
-
-
 
 ##
 
