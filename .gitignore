@@ -7,3 +7,10 @@ rendered-*
 compiled-dem-*.tif
 tmp.geo
 tmp.msh
+#*
+pescadero-*-20*/
+Thumbs.db*
+interped/
+scen1
+scen2
+scen3
